@@ -1,0 +1,28 @@
+.kb-prose { min-width: 0; }
+.kb-topic-head { padding: 1rem 0 2rem; border-bottom: 1px solid var(--ink); margin-bottom: 1rem; animation: kb-rise .6s ease both; }
+.kb-prose h1 { font-family: var(--display); font-size: clamp(2.4rem, 5vw, 3.6rem); font-weight: 500; line-height: 1.08; margin: 0.4rem 0 0.9rem; letter-spacing: -0.015em; font-variation-settings: "opsz" 144, "SOFT" 30; }
+.kb-prose h2 { font-family: var(--display); font-size: 1.9rem; font-weight: 600; line-height: 1.25; margin: 0; font-variation-settings: "opsz" 72; }
+.kb-prose h3 { font-family: var(--sans); font-size: 1.02rem; font-weight: 600; letter-spacing: 0.01em; margin: 2.4rem 0 0.5rem; color: var(--ink); }
+.kb-prose h3::before { content: ""; display: inline-block; width: 0.9rem; height: 1px; background: var(--accent); vertical-align: middle; margin-right: 0.55rem; }
+.kb-prose p { margin: 0.95rem 0; }
+.kb-prose ul, .kb-prose ol { padding-left: 1.4rem; }
+.kb-prose li { margin: 0.3rem 0; }
+.kb-prose li::marker { color: var(--ink-3); }
+.kb-prose blockquote { margin: 1.4rem 0; padding: 0.3rem 1.3rem; border-left: 3px solid var(--accent); color: var(--ink-2); font-style: italic; }
+.kb-prose hr { border: 0; border-top: 1px solid var(--rule); margin: 3rem 0; }
+
+.kb-prose .katex { font-size: 1.04em; }
+.kb-prose .katex-display { margin: 1.2rem 0; overflow-x: auto; overflow-y: hidden; padding: 0.3rem 0; }
+
+.kb-table-wrap { overflow-x: auto; margin: 1.4rem 0; }
+.kb-prose table { border-collapse: collapse; width: 100%; font-size: 0.92rem; font-family: var(--sans); border-top: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink); }
+.kb-prose th, .kb-prose td { padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; }
+.kb-prose td { border-top: 1px solid var(--rule); }
+.kb-prose th { color: var(--ink-2); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.04em; border-bottom: 1px solid var(--ink); }
+
+.kb-prose code { font-family: var(--mono); font-size: 0.85em; background: var(--paper-2); padding: 0.1em 0.35em; border-radius: 3px; }
+.kb-prose pre { font-size: 0.84rem; line-height: 1.65; padding: 1rem 1.25rem; border-radius: var(--radius); border: 1px solid var(--rule); overflow-x: auto; background: var(--card) !important; }
+.kb-prose pre code { background: none; padding: 0; font-size: inherit; }
+
+@keyframes kb-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

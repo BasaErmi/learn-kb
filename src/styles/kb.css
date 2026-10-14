@@ -1,0 +1,89 @@
+/* 步骤：页边大号编号 + 标题 */
+.kb-step, .kb-section { padding-top: 4.5rem; }
+.kb-step-head { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 1.2rem; align-items: start; margin-bottom: 1.4rem; padding-bottom: 1rem; border-bottom: 1px solid var(--rule); }
+.kb-step-num {
+  font-family: var(--display); font-size: 4.2rem; line-height: 0.85; font-weight: 300; color: transparent;
+  -webkit-text-stroke: 1.2px var(--accent); font-variation-settings: "opsz" 144, "SOFT" 100; letter-spacing: -0.03em;
+}
+.kb-step-kicker { font-family: var(--sans); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.16em; color: var(--accent); }
+.kb-step-gist { margin: 0.35rem 0 0; font-size: 1.05rem; color: var(--ink-2); font-style: italic; line-height: 1.7; }
+@media (max-width: 600px) { .kb-step-num { font-size: 3rem; } }
+
+/* 旁注块 */
+.kb-label { font-family: var(--sans); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 0.35rem; }
+.kb-keypoint, .kb-pitfall, .kb-quiz { margin: 1.5rem 0; padding: 1rem 1.3rem; border-radius: 2px var(--radius) var(--radius) 2px; }
+.kb-keypoint { background: var(--key-soft); border-left: 3px solid var(--key); }
+.kb-keypoint .kb-label { color: var(--key); }
+.kb-pitfall { background: var(--warn-soft); border-left: 3px solid var(--warn); font-size: 0.96rem; }
+.kb-pitfall .kb-label { color: var(--warn); }
+.kb-pitfall .kb-label::before { content: "⚑ "; }
+.kb-quiz { background: var(--card); border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--rule)); border-radius: var(--radius); }
+.kb-quiz .kb-label { color: var(--accent); }
+.kb-quiz .kb-label::before { content: "? "; }
+.kb-answer { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid var(--rule); animation: kb-rise .35s ease both; }
+.kb-keypoint > :last-child, .kb-pitfall > :last-child, .kb-quiz > :last-child, .kb-answer > :last-child { margin-bottom: 0; }
+.kb-keypoint > .kb-label + *, .kb-pitfall > .kb-label + *, .kb-quiz > .kb-label + * { margin-top: 0; }
+
+/* 按钮 */
+.kb-btn, .kb-btn-ghost, .kb-chip, .kb-detail-toggle { font-family: var(--sans); font-size: 0.8rem; border-radius: 999px; padding: 0.28rem 0.95rem; transition: background .15s, border-color .15s, color .15s; }
+.kb-btn { background: var(--ink); color: var(--paper); border: 1px solid var(--ink); }
+.kb-btn:hover { background: var(--accent); border-color: var(--accent); }
+.kb-btn-ghost { background: transparent; border: 1px solid var(--rule); color: var(--ink-2); }
+.kb-btn-ghost:hover { border-color: var(--ink-3); color: var(--ink); }
+.kb-chip { background: var(--card); border: 1px solid var(--rule); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.kb-chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.kb-detail-toggle { display: block; margin: 0.8rem 0; background: none; border: 1px dashed var(--rule); color: var(--ink-3); }
+.kb-detail-toggle:hover { color: var(--ink); border-color: var(--ink-3); }
+.kb-muted { color: var(--ink-3); font-family: var(--sans); font-size: 0.84rem; }
+
+/* 推导展开器 */
+.kb-deriv { margin: 1.4rem 0; padding: 0.7rem 1.3rem 0.8rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); }
+.kb-deriv ol { margin: 0; padding-left: 1.3rem; }
+.kb-deriv li::marker { font-family: var(--sans); font-size: 0.75rem; color: var(--accent); }
+.kb-deriv li.is-new { animation: kb-rise .4s ease both; }
+.kb-deriv-ctrl { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+.kb-deriv.is-final { border-left: 3px solid var(--key); }
+
+/* 图片 */
+.kb-figure { margin: 1.8rem 0; }
+.kb-figure.kb-wide { margin-left: -3rem; margin-right: -3rem; }
+.kb-figure img { width: 100%; border-radius: 3px; border: 1px solid var(--rule); background: var(--card); padding: 4px; }
+.kb-figure figcaption { font-family: var(--sans); font-size: 0.8rem; color: var(--ink-3); margin-top: 0.55rem; line-height: 1.6; }
+.kb-source { margin-left: 0.5rem; }
+.kb-placeholder { aspect-ratio: 16 / 7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; text-align: center; padding: 1rem; border: 1.5px dashed var(--ink-3); border-radius: 3px; color: var(--ink-3); font-family: var(--sans); font-size: 0.82rem; line-height: 1.5;
+  background: repeating-linear-gradient(135deg, transparent 0 10px, color-mix(in srgb, var(--paper-2) 70%, transparent) 10px 20px); }
+.kb-placeholder span { font-weight: 700; letter-spacing: 0.14em; font-size: 0.68rem; color: var(--ink-2); }
+.kb-figrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.9rem; margin: 1.6rem 0; }
+.kb-figrow .kb-figure { margin: 0; }
+.kb-figrow .kb-figure img, .kb-figrow .kb-placeholder { aspect-ratio: 4 / 3; object-fit: cover; }
+@media (max-width: 1100px) { .kb-figure.kb-wide { margin-left: 0; margin-right: 0; } }
+
+/* 路线图 */
+.kb-roadmap { margin: 1.8rem 0; font-family: var(--sans); }
+.kb-roadmap ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(7.6rem, 1fr)); gap: 0.55rem; }
+.kb-roadmap button { width: 100%; height: 100%; text-align: left; padding: 0.65rem 0.75rem 0.7rem; background: var(--card); border: 1px solid var(--rule); border-top: 3px solid var(--k); border-radius: 2px 2px var(--radius) var(--radius); display: flex; flex-direction: column; gap: 0.15rem; transition: transform .15s, box-shadow .15s; }
+.kb-roadmap button:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.kb-road-idx { font-family: var(--display); font-size: 1.1rem; color: var(--k); line-height: 1; }
+.kb-road-label { font-weight: 600; font-size: 0.9rem; color: var(--ink); }
+.kb-road-sub { font-size: 0.74rem; color: var(--ink-3); line-height: 1.45; }
+.kb-road-legend { display: flex; flex-wrap: wrap; gap: 1.1rem; margin-top: 0.7rem; font-size: 0.74rem; color: var(--ink-3); }
+.kb-road-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--k); margin-right: 0.35rem; vertical-align: -1px; }
+.kind-goal { --k: var(--warn); }
+.kind-basis { --k: var(--c-uncond); }
+.kind-pre { --k: var(--c-cond); }
+.kind-core { --k: var(--accent); }
+
+/* 自测卡片 */
+.kb-cards-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; font-family: var(--sans); font-size: 0.84rem; margin: 1.2rem 0; color: var(--ink-2); }
+.kb-cards-bar .kb-meter { flex: 1; min-width: 6rem; height: 4px; }
+.kb-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1rem; }
+.kb-card { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); box-shadow: var(--shadow); transition: border-color .2s, transform .2s; }
+.kb-card:hover { transform: translateY(-2px); }
+.kb-card.is-flipped { border-color: var(--key); background: color-mix(in srgb, var(--key-soft) 45%, var(--card)); }
+.kb-card-face { flex: 1; padding: 0.95rem 1.15rem; cursor: pointer; font-size: 0.94rem; line-height: 1.75; }
+.kb-card-side { display: block; font-family: var(--sans); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.16em; color: var(--ink-3); margin-bottom: 0.3rem; }
+.kb-card.is-flipped .kb-card-side { color: var(--key); }
+.kb-card-check { padding: 0.45rem 1.15rem 0.6rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: 0.78rem; color: var(--ink-2); }
+.kb-card-check input { accent-color: var(--accent); }
+
+[data-review="on"] .kb-step, [data-review="on"] .kb-section { padding-top: 2.5rem; }

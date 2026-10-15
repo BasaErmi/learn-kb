@@ -16,4 +16,4 @@ npm run e2e      # 端到端测试（首次需 npx playwright install chromium�
 ```
 
 ## 技术栈
-Vite + React + TypeScript + MDX，公式由 KaTeX 在构建期渲染。结构说明见 `PROJECT_OVERVIEW.md`，图片来源见 `public/images/cfg/SOURCES.md`。
+Vite + React + TypeScript + MDX，公式由 KaTeX 在构建期渲染。结构说明见 `PROJECT_OVERVIEW.md`。

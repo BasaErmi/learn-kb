@@ -9,7 +9,7 @@
 - `src/kb/`：与主题无关的共用组件和状态（复习模式、要点框、测验、卡片、演示外框）
 - `src/topics/registry.ts`：主题注册表
 - `src/topics/<slug>/`：一个主题。`index.mdx` 是正文，`demos/` 放交互演示，`lib/` 放数值计算（纯函数，有单元测试）
-- `public/images/<slug>/`：主题图片，以及来源说明 `SOURCES.md`
+- `public/images/<slug>/`：主题图片
 - `tests/e2e/`：Playwright 端到端测试
 - `docs/ADR/`：架构决策；`docs/superpowers/`：设计 spec 与实现计划
 
@@ -53,7 +53,6 @@ Vite 8、React 19、TypeScript 5.9、MDX 3、KaTeX、Shiki、react-router 7（Ha
 
 ## 发布流程
 - 源码在私有仓库 personalDocument/learnHtml 中维护；公开仓库 `~/Github/learn-kb` 只是发布副本，不要直接在那里改。
-- `scripts/gen_dit_scale_samples.py`：在 GPU 节点上用 DiT-XL/2-256 生成同种子、不同 guidance scale 的对比图（`public/images/cfg/dit-scale/`）。不进入构建，只为可复现；GPU 使用须遵守 gpu199 上 `project/guanlin/infra/AGENTS.md` 的压测切换规则
 - `scripts/publish.sh` 用 rsync 同步，`scripts/publish-exclude.txt` 排除 `CFG/` 对话记录、node_modules、dist 等。
 - 部署工作流：`.github/workflows/deploy.yml`（只在公开仓库根目录生效）。
 

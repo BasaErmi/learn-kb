@@ -9,7 +9,7 @@ const ROWS = [
   { seed: 4, note: '过饱和' },
 ]
 
-/** 同种子、只改 s 的 DiT-XL/2 真实采样网格；图片由 scripts/gen_dit_scale_samples.py 生成 */
+/** 同种子、只改 s 的 DiT-XL/2 采样网格 */
 export function ScaleGrid() {
   const { review } = useReviewMode()
   if (review) return null

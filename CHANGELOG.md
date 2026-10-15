@@ -1,12 +1,15 @@
 # 变更日志
 
+## [2026-10-15] - Removed
+- 不再记录图片是怎么来的：删除 `public/images/cfg/SOURCES.md` 和 DiT 对比图的生成脚本，并删掉 README、PROJECT_OVERVIEW、组件注释和 CHANGELOG 里关于图片来源、生成方式与计算资源的描述。规则同时写进 skill：以后的生成脚本不放进仓库，项目文件、提交说明和页面里都不写图片来源与计算资源信息。
+
 ## [2026-10-15] - Changed
 - 第 1 步：「条件生成的基本做法」末尾写出普通条件生成的采样分布，并用贝叶斯公式拆成 $p(x \mid y) \propto p(x)\,p(y \mid x)$，说明两个因子的含义；要点框开头先给出普通做法，再说锐化是“给第二个因子加指数 $s$”；「我们真正想要的」里引出锐化公式时也改为从 $p(x)\,p(y \mid x)$ 出发，并注明 $s = 1$ 时退回普通条件生成。这样锐化公式不会突然出现。相关文件：`src/topics/cfg/index.mdx`。
 - skill 自查清单新增一条：引入“改造后”的公式之前，先写出它的基线形式，再说明改了哪一部分。
 
 ## [2026-10-14] - Added
 - 项目 skill `learn-topic-page`（`.claude/skills/learn-topic-page/`）：把学习对话记录做成与 CFG 同等水准的专题页。`SKILL.md` 写流程和页面结构，`references/` 下分别是组件与 MDX 注意事项、演示规范、交付前编辑自查清单（来自 CFG 的历次反馈）、GPU 生成真实样本的规则；`assets/review-shots.spec.ts` 是截图自查模板，会在三种宽度下截图，并检查 KaTeX 错误、溢出、NaN 和残留的 Unicode 数学符号。
-- 发布排除：`scripts/publish-exclude.txt` 新增 `.claude/`（skill 里有内部集群信息）和 `*学习对话记录.md`（以后新专题的原始记录会自动被排除）。已用 rsync 演练确认。
+- 发布排除：`scripts/publish-exclude.txt` 新增 `.claude/`（本地工具配置，不对外公开）和 `*学习对话记录.md`（以后新专题的原始记录会自动被排除）。已用 rsync 演练确认。
 
 ## [2026-10-14] - Changed
 - 旁注改为宽屏边栏：视口 ≥ 1380px 时，页面网格增加一个 16rem 的右栏，`.kb-aside` 浮动到右栏（Tufte 式 sidenote），纵向和它在源码中的位置对齐；更窄的屏幕仍按行内旁注显示。第 1 步「每个值都变小了…」改回主线小节，因为它有 3 个公式和一张表，而且锐化 demo 的 A/B 例子就出自这里。「为什么需要一串噪声水平」挪到“什么是 score”列表中 Langevin 那条之后，「期望的下标能不能省？」挪到事实 2 推导的结论句之后。相关文件：`src/styles/kb.css`、`src/topics/cfg/index.mdx`。
@@ -54,7 +57,7 @@
 - 锐化 demo 的纵轴原来随当前曲线的峰高自动缩放，s 增大时 s = 1 的虚线看起来也在变矮。改为固定在 s = 10 的峰高，虚线不再变化。相关文件：`src/topics/cfg/demos/SharpenDemo.tsx`、`tests/e2e/kb.spec.ts`。
 
 ## [2026-10-14] - Changed
-- 第 7 步的两张 DiT 论文样例图换成真实生成的 guidance scale 对比网格：DiT-XL/2-256 官方权重，类别 207 金毛，4 个固定种子 × s = 1 / 1.5 / 4 / 10，DDIM 50 步（eta=0）。新组件 `ScaleGrid` 把列标题和行说明做成 HTML，深色主题和手机端都能正常显示。生成脚本 `scripts/gen_dit_scale_samples.py`，在 node1 的 GPU0 上运行（按 infra 规则临时让出该卡的压测，结束后已恢复）。相关文件：`src/topics/cfg/demos/ScaleGrid.tsx`、`src/styles/kb.css`、`src/topics/cfg/index.mdx`、`public/images/cfg/dit-scale/`、`public/images/cfg/SOURCES.md`；删除 `dit-samples-0/1.jpg`。
+- 第 7 步的两张 DiT 论文样例图换成真实生成的 guidance scale 对比网格：DiT-XL/2-256 官方权重，类别 207 金毛，4 个固定种子 × s = 1 / 1.5 / 4 / 10，DDIM 50 步（eta=0）。新组件 `ScaleGrid` 把列标题和行说明做成 HTML，深色主题和手机端都能正常显示。相关文件：`src/topics/cfg/demos/ScaleGrid.tsx`、`src/styles/kb.css`、`src/topics/cfg/index.mdx`、`public/images/cfg/dit-scale/`；删除 `dit-samples-0/1.jpg`。
 
 ## [2026-10-14] - Changed
 - 第 1 步的三张金毛示例图移到「真实分布本身就很“宽”」这一段后面，图片紧跟着对应的论点（现在位于讲解块内，复习模式下随讲解一起收起），并去掉这三张图的来源标注。相关文件：`src/topics/cfg/index.mdx`。
@@ -66,7 +69,7 @@
 - GitHub Pages 部署：公开仓库 BasaErmi/learn-kb + Actions 工作流，`npm run publish` 一键同步发布（排除对话记录）。相关文件：`.github/workflows/deploy.yml`、`scripts/publish.sh`、`README.md`。
 
 ## [2026-10-14] - Changed
-- 第 1 步的「非典型」「低质量」金毛示例由占位框换成真实图片，「典型」示例换成无水印的全身照（均来自 dog.ceo / Stanford Dogs）；修复图片行被误设为 16:7 比例的问题。相关文件：`src/topics/cfg/index.mdx`、`public/images/cfg/`。
+- 第 1 步的「非典型」「低质量」金毛示例由占位框换成真实图片，「典型」示例换成无水印的全身照；修复图片行被误设为 16:7 比例的问题。相关文件：`src/topics/cfg/index.mdx`、`public/images/cfg/`。
 
 ## [2026-10-14] - Added
 - **CFG 学习页**（`src/topics/cfg/`）：包括第 1～7 步讲解、公式速查、15 条易错点、19 张自测卡片、7 道检验题。
@@ -75,7 +78,7 @@
 - **数值计算库**（`src/topics/cfg/lib/`，37 个单元测试）：用于驱动上面的演示。
 - **知识库共用组件**（`src/kb/`）：Step、KeyPoint、Detail、Pitfall、Quiz、Derivation、Figure、Demo、Slider、Tex、SvgSub、Flashcards、Roadmap、TopicToc、ReviewToggle。
 - **页面功能**：学习 / 复习两种模式、阅读进度、自测"已掌握"记录（都存在 localStorage）。
-- **本地图片**（`public/images/cfg/`）：DiT 官方样例、金毛、萨摩耶，来源见 `SOURCES.md`。
+- **本地图片**（`public/images/cfg/`）：DiT 样例、金毛、萨摩耶。
 - **端到端测试**（`tests/e2e/kb.spec.ts`）：共 12 项。
 
 ## [2026-10-14] - Changed

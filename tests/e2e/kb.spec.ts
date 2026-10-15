@@ -118,6 +118,20 @@ test('cross-reference opens a collapsed explanation in review mode', async ({ pa
   await expect(page.locator('#fact-2 + p')).toBeInViewport()
 })
 
+test('deep link ?at= opens the anchor (expanding a collapsed explanation) and cleans the URL', async ({ page }) => {
+  await page.goto('./#/')
+  await page.getByRole('button', { name: '复习', exact: true }).click()
+  await page.goto('./#/t/cfg?at=fact-2')
+  await expect(page.locator('#fact-2 + p')).toBeInViewport()
+  await expect(page).toHaveURL(/#\/t\/cfg$/)
+})
+
+test('?y= restores the scroll position used when returning from another topic', async ({ page }) => {
+  await page.goto('./#/t/cfg?y=6000')
+  await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(6000)
+  await expect(page).toHaveURL(/#\/t\/cfg$/)
+})
+
 test('review mode persists and hides demos', async ({ page }) => {
   await page.goto('./#/t/cfg')
   await page.getByRole('button', { name: '复习', exact: true }).click()

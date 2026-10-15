@@ -1,5 +1,17 @@
 # 变更日志
 
+## [2026-10-15] - Added
+- 跨专题链接：`<Ref topic="<slug>" to="<锚点或 step-N>">` 打开目标专题并定位（目标在折叠的讲解块里会自动展开）；右下角出现「↩ 回到《原专题》」，点击后回到原专题的原滚动位置。外链带 ↗ 标记。支持深链接 `#/t/<slug>?at=<锚点>`，`?at` 和 `?y` 处理完后会从地址栏清掉。新增 2 个 e2e 测试（深链接定位、位置恢复）；完整的跨专题往返用一个临时专题验证过，验证后已删除。规则写进 skill 和 PROJECT_OVERVIEW：锚点 id 发布后不改名，加了跨专题链接要补测试。相关文件：`src/kb/jump.tsx`、`src/app/TopicPage.tsx`、`src/styles/kb.css`、`tests/e2e/kb.spec.ts`。
+
+## [2026-10-15] - Fixed
+- 从一个专题切换到另一个专题时页面会一直停在旧专题：React Router v7 的导航在 transition 里进行，挂起的渲染会被丢弃，而 `TopicPage` 在渲染时用 `useMemo` 现场创建 lazy 组件，每次重试都是新组件，永远加载不完。改为按专题在模块级缓存 lazy 组件。只有一个专题时不会触发，验证跨专题链接时发现。相关文件：`src/app/TopicPage.tsx`。
+
+## [2026-10-15] - Changed
+- 行内公式里的 `a/b` 统一改为 `\frac{a}{b}`：正文 16 处，磁铁演示 1 处。skill 自查清单补充了这一条。相关文件：`src/topics/cfg/index.mdx`、`src/topics/cfg/demos/MagnetDemo.tsx`。
+
+## [2026-10-15] - Changed
+- 总览中介绍推导链的那段话改得更短、更口语，按“目标分布 → 改分布就是改噪声预测 → 借分类器 → 省掉分类器”逐步推进。skill 自查清单补充了总览段落的写法要求。相关文件：`src/topics/cfg/index.mdx`。
+
 ## [2026-10-15] - Removed
 - 不再记录图片是怎么来的：删除 `public/images/cfg/SOURCES.md` 和 DiT 对比图的生成脚本，并删掉 README、PROJECT_OVERVIEW、组件注释和 CHANGELOG 里关于图片来源、生成方式与计算资源的描述。规则同时写进 skill：以后的生成脚本不放进仓库，项目文件、提交说明和页面里都不写图片来源与计算资源信息。
 

@@ -132,7 +132,7 @@ export function MagnetDemo() {
         </tbody>
       </table>
       </div>
-      <p className="kb-demo-note">检验事实 2：<Tex>{'-\\mathbb{E}[\\epsilon \\mid x_t] / \\sqrt{1-\\bar\\alpha_t}'}</Tex> = {vec([-epsBar[0] / Math.sqrt(1 - ab), -epsBar[1] / Math.sqrt(1 - ab)], 3)}，和 score 一致。</p>
+      <p className="kb-demo-note">检验事实 2：<Tex>{'-\\frac{\\mathbb{E}[\\epsilon \\mid x_t]}{\\sqrt{1-\\bar\\alpha_t}}'}</Tex> = {vec([-epsBar[0] / Math.sqrt(1 - ab), -epsBar[1] / Math.sqrt(1 - ab)], 3)}，和 score 一致。</p>
     </Demo>
   )
 }

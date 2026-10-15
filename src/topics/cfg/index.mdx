@@ -25,7 +25,7 @@ $$
 
 </KeyPoint>
 
-整条推导是一条链：先定一个想采样的目标分布，再找到把“改分布”翻译成“改网络输出”的工具，然后看最早的做法（用分类器）有什么问题，最后把分类器去掉。点击下面的节点可以跳到对应的步骤。
+我们先想清楚要从什么分布采样；接着会发现，在扩散模型里改分布其实就是改噪声预测；最早的做法借一个分类器来改，CFG 则连分类器也省掉了。点击节点可以跳到对应的步骤。
 
 <Roadmap nodes={[
   { id: 'step-1', label: '定目标', sub: '锐化目标分布', kind: 'goal' },
@@ -145,7 +145,7 @@ $$
 \frac{\tilde p(x_A \mid y)}{\tilde p(x_B \mid y)} = \frac{p(x_A)}{p(x_B)}\left(\frac{p(y \mid x_A)}{p(y \mid x_B)}\right)^{s}
 $$
 
-原来的比值被 $s$ 次方放大，这就是“锐化”。和 temperature 同理：softmax 除以小于 1 的 $T$，等价于把每个概率做 $1/T$ 次方再归一化。
+原来的比值被 $s$ 次方放大，这就是“锐化”。和 temperature 同理：softmax 除以小于 1 的 $T$，等价于把每个概率做 $\frac{1}{T}$ 次方再归一化。
 
 $Z$ 通常算不出来（要对所有图像积分），但扩散模型采样只用到对数密度的**梯度**，而 $Z$ 与 $x$ 无关，求梯度直接消失：
 
@@ -198,7 +198,7 @@ $$
 \boxed{\ \nabla_{x_t} \log p_t(x_t) \approx -\frac{\epsilon_\theta(x_t, t)}{\sqrt{1-\bar\alpha_t}}\ }
 $$
 
-条件模型同理：$\nabla_{x_t} \log p_t(x_t \mid y) \approx -\epsilon_\theta(x_t, t, y) / \sqrt{1-\bar\alpha_t}$。
+条件模型同理：$\nabla_{x_t} \log p_t(x_t \mid y) \approx -\frac{\epsilon_\theta(x_t, t, y)}{\sqrt{1-\bar\alpha_t}}$。
 
 后文把这个式子称为 **score 与噪声的换算关系**（简称换算关系），文献里一般说成噪声预测与 score 等价（$\epsilon$-prediction 是 score 的一种参数化）。
 
@@ -226,10 +226,10 @@ $$
 
 为什么要取对数再求梯度，而不是直接用 $\nabla_x p(x)$？
 
-1. **它是相对变化率。** $\nabla_x \log p = \nabla_x p / p$。图像空间里绝大部分区域 $p(x)$ 都小得接近 0，$\nabla_x p$ 也几乎是 0；除以 $p$ 之后，低密度区域依然有清晰的方向。采样恰恰是从低密度的噪声区域出发的。
+1. **它是相对变化率。** $\nabla_x \log p = \frac{\nabla_x p}{p}$。图像空间里绝大部分区域 $p(x)$ 都小得接近 0，$\nabla_x p$ 也几乎是 0；除以 $p$ 之后，低密度区域依然有清晰的方向。采样恰恰是从低密度的噪声区域出发的。
 2. **归一化常数消失。** $\log p = \log \tilde p - \log Z$，$Z$ 求梯度为零。
 3. **乘法变加法。** $\nabla_x \log\left[p(x)\,p(y \mid x)^s\right] = \nabla_x \log p(x) + s\,\nabla_x \log p(y \mid x)$。第 3、4 步全靠这一条。
-4. **高斯的 score 是线性的。** $\mathcal N(\mu, \sigma^2 I)$ 的 score 是 $-(x-\mu)/\sigma^2$。
+4. **高斯的 score 是线性的。** $\mathcal N(\mu, \sigma^2 I)$ 的 score 是 $-\frac{x-\mu}{\sigma^2}$。
 5. **知道 score 就能采样。** Langevin dynamics $x \leftarrow x + \tfrac{\eta}{2}\nabla_x \log p(x) + \sqrt{\eta}\,z$ 在步长足够小、迭代足够多时收敛到 $p$。
 
 <Aside title="为什么需要一串噪声水平">
@@ -286,7 +286,7 @@ $$
 
 <Aside title="期望的下标能不能省？">
 
-第三行里 $\mathbb{E}[\epsilon \mid x_t]$ 看不到 $x_0$，但**不能**把它当成无条件期望。给定 $x_t$ 后，$\epsilon = (x_t - \sqrt{\bar\alpha_t}\,x_0)/\sqrt{1-\bar\alpha_t}$ 的随机性完全来自 $x_0$，分布就藏在竖线 $\mid x_t$ 里。$\mathbb{E}_{x_0 \sim q(x_0 \mid x_t)}[\cdot]$ 和 $\mathbb{E}[\cdot \mid x_t]$ 只是两种记号。如果真去掉条件，$\epsilon \sim \mathcal N(0, I)$ 的期望恒为 0，score 也恒为 0，显然不对：演示里 $x_t = (0.6, 0.3)$ 在最可能的来源 D、E 加噪后的中心的左下方，所以 $\mathbb{E}[\epsilon \mid x_t] = (-0.624, -0.461)$ 也朝左下，并不是 0。
+第三行里 $\mathbb{E}[\epsilon \mid x_t]$ 看不到 $x_0$，但**不能**把它当成无条件期望。给定 $x_t$ 后，$\epsilon = \frac{x_t - \sqrt{\bar\alpha_t}\,x_0}{\sqrt{1-\bar\alpha_t}}$ 的随机性完全来自 $x_0$，分布就藏在竖线 $\mid x_t$ 里。$\mathbb{E}_{x_0 \sim q(x_0 \mid x_t)}[\cdot]$ 和 $\mathbb{E}[\cdot \mid x_t]$ 只是两种记号。如果真去掉条件，$\epsilon \sim \mathcal N(0, I)$ 的期望恒为 0，score 也恒为 0，显然不对：演示里 $x_t = (0.6, 0.3)$ 在最可能的来源 D、E 加噪后的中心的左下方，所以 $\mathbb{E}[\epsilon \mid x_t] = (-0.624, -0.461)$ 也朝左下，并不是 0。
 
 判断规则：只有当被平均的式子**完全不依赖**那个随机变量时，期望才是多余的；只要还需要写 $\mathbb E$，它的分布就必须明确，要么写在下标，要么通过条件隐含。
 
@@ -296,7 +296,7 @@ $$
 
 把每个数据点 $x_0$ 想成一块磁铁，各自把 $x_t$ 往自己那边拉（拉力就是上面的单样本 score）。真实的 score 是**所有拉力的加权平均**，权重是“$x_t$ 来自这个 $x_0$ 的可能性”，即后验 $q(x_0 \mid x_t)$。离 $x_t$ 近的来源权重大。
 
-同一件事从网络的角度看：每个来源对应一个噪声 $\epsilon = (x_t - \sqrt{\bar\alpha_t}\,x_0)/\sqrt{1-\bar\alpha_t}$，网络分不清是哪个，只能输出按可能性加权的“平均噪声” $\mathbb{E}[\epsilon \mid x_t]$。每个来源的拉力 $\nabla_{x_t} \log q(x_t \mid x_0)$ 恰好是它对应噪声的 $-1/\sqrt{1-\bar\alpha_t}$ 倍，所以两个平均也只差这个系数，这正是<Ref to="fact-2">事实 2</Ref> 的最后一行。下面的演示可以直接验证：7 个数据点、$t = 0.45$（$\bar\alpha_t \approx 0.572$）、$x_t = (0.6, 0.3)$ 时，右上的 D、E 两点后验权重为 45.7% / 39.1%，下方的 F 还有 7.4%；平均噪声 $\mathbb{E}[\epsilon \mid x_t] = (-0.624, -0.461)$，除以 $-\sqrt{1-\bar\alpha_t}$ 正好得到 score $= (0.953, 0.704)$。把各条拉力都乘上 $1-\bar\alpha_t$ 画出来，每条正好从 $x_t$ 指到 $\sqrt{\bar\alpha_t}\,x_0$（这个来源加噪后的中心），而加权平均后的 score 指向它们的加权重心 $\sqrt{\bar\alpha_t}\,\mathbb E[x_0 \mid x_t]$。
+同一件事从网络的角度看：每个来源对应一个噪声 $\epsilon = \frac{x_t - \sqrt{\bar\alpha_t}\,x_0}{\sqrt{1-\bar\alpha_t}}$，网络分不清是哪个，只能输出按可能性加权的“平均噪声” $\mathbb{E}[\epsilon \mid x_t]$。每个来源的拉力 $\nabla_{x_t} \log q(x_t \mid x_0)$ 恰好是它对应噪声的 $-\frac{1}{\sqrt{1-\bar\alpha_t}}$ 倍，所以两个平均也只差这个系数，这正是<Ref to="fact-2">事实 2</Ref> 的最后一行。下面的演示可以直接验证：7 个数据点、$t = 0.45$（$\bar\alpha_t \approx 0.572$）、$x_t = (0.6, 0.3)$ 时，右上的 D、E 两点后验权重为 45.7% / 39.1%，下方的 F 还有 7.4%；平均噪声 $\mathbb{E}[\epsilon \mid x_t] = (-0.624, -0.461)$，除以 $-\sqrt{1-\bar\alpha_t}$ 正好得到 score $= (0.953, 0.704)$。把各条拉力都乘上 $1-\bar\alpha_t$ 画出来，每条正好从 $x_t$ 指到 $\sqrt{\bar\alpha_t}\,x_0$（这个来源加噪后的中心），而加权平均后的 score 指向它们的加权重心 $\sqrt{\bar\alpha_t}\,\mathbb E[x_0 \mid x_t]$。
 
 <MagnetDemo />
 
@@ -396,7 +396,7 @@ $$
 \hat s = \underbrace{-\frac{\epsilon_\theta(x_t, t)}{\sqrt{1-\bar\alpha_t}}}_{\text{第一项（由 } \epsilon_\theta \text{ 换算）}} + s\,\underbrace{\nabla_{x_t} \log p_\phi(y \mid x_t, t)}_{\text{第二项（由分类器给出）}}
 $$
 
-采样器（DDPM / DDIM 的更新公式）只接受“噪声预测”格式的输入，所以要问：**哪个 $\hat\epsilon$ 对应这个 score？** 按同一条换算关系 $\hat s = -\hat\epsilon / \sqrt{1-\bar\alpha_t}$，反解出 $\hat\epsilon$ 再代入 $\hat s$：
+采样器（DDPM / DDIM 的更新公式）只接受“噪声预测”格式的输入，所以要问：**哪个 $\hat\epsilon$ 对应这个 score？** 按同一条换算关系 $\hat s = -\frac{\hat\epsilon}{\sqrt{1-\bar\alpha_t}}$，反解出 $\hat\epsilon$ 再代入 $\hat s$：
 
 $$
 \begin{aligned}
@@ -495,7 +495,7 @@ $$
 
 ### 换成噪声预测
 
-记 $c = \sqrt{1-\bar\alpha_t}$，三个 score 分别换成 $-\hat\epsilon / c$、$-\epsilon_\varnothing / c$、$-\epsilon_y / c$：
+记 $c = \sqrt{1-\bar\alpha_t}$，三个 score 分别换成 $-\frac{\hat\epsilon}{c}$、$-\frac{\epsilon_\varnothing}{c}$、$-\frac{\epsilon_y}{c}$：
 
 <Derivation>
 
@@ -738,7 +738,7 @@ $s$ 越大，“很像 $y$”和“不太像 $y$”的样本之间的概率差�
 
 ### 过大为什么会坏
 
-**外推出了训练范围。** $s$ 很大时，$\hat\epsilon$ 的数值远离网络任何一次真实输出，代入 $\hat{x}_0 = (x_t - \sqrt{1-\bar\alpha_t}\,\hat\epsilon)/\sqrt{\bar\alpha_t}$ 后，像素值容易超出数据的正常范围（比如 $[-1, 1]$），表现为过饱和和高对比。
+**外推出了训练范围。** $s$ 很大时，$\hat\epsilon$ 的数值远离网络任何一次真实输出，代入 $\hat{x}_0 = \frac{x_t - \sqrt{1-\bar\alpha_t}\,\hat\epsilon}{\sqrt{\bar\alpha_t}}$ 后，像素值容易超出数据的正常范围（比如 $[-1, 1]$），表现为过饱和和高对比。
 
 **轨迹偏离，误差累积。** 每一步被推得太远，$x_{t-1}$ 落在网络很少见过的区域，下一步预测更不准，再被放大 $s$ 倍。
 
@@ -800,13 +800,13 @@ IS 基本不惩罚类内多样性下降，随 $s$ 单调上升，所以“IS 最
 | --- | --- |
 | 目标分布（锐化） | $\tilde p(x \mid y) \propto p(x)\,p(y \mid x)^{s}$ |
 | 目标 score | $\nabla \log p_t(x_t) + s\,\nabla \log p_t(y \mid x_t)$ |
-| score ↔ 噪声预测（换算关系） | $\nabla_{x_t} \log p_t(x_t) \approx -\epsilon_\theta(x_t, t) / \sqrt{1-\bar\alpha_t}$ |
+| score ↔ 噪声预测（换算关系） | $\nabla_{x_t} \log p_t(x_t) \approx -\frac{\epsilon_\theta(x_t, t)}{\sqrt{1-\bar\alpha_t}}$ |
 | 隐式分类器 | $\nabla \log p_t(y \mid x_t) = \nabla \log p_t(x_t \mid y) - \nabla \log p_t(x_t)$ |
 | Classifier guidance | $\hat\epsilon = \epsilon_\theta(x_t, t) - s\sqrt{1-\bar\alpha_t}\,\nabla_{x_t} \log p_\phi(y \mid x_t, t)$ |
 | CFG（$s$ 约定） | $\hat\epsilon = \epsilon_\varnothing + s\,(\epsilon_y - \epsilon_\varnothing) = (1-s)\,\epsilon_\varnothing + s\,\epsilon_y$ |
 | CFG（$w$ 约定） | $\hat\epsilon = (1+w)\,\epsilon_y - w\,\epsilon_\varnothing$，$s = 1 + w$ |
 | Label dropout | 以概率 $p_{\text{uncond}} \approx 0.1$ 令 $\tilde y = \varnothing$，其余照常训练 |
-| 代入 DDIM | $\hat x_0 = (x_t - \sqrt{1-\bar\alpha_t}\,\hat\epsilon)/\sqrt{\bar\alpha_t}$，再照常算 $x_{t-1}$ |
+| 代入 DDIM | $\hat x_0 = \frac{x_t - \sqrt{1-\bar\alpha_t}\,\hat\epsilon}{\sqrt{\bar\alpha_t}}$，再照常算 $x_{t-1}$ |
 | Negative prompt | $\hat\epsilon = \epsilon_{\text{neg}} + s\,(\epsilon_y - \epsilon_{\text{neg}})$ |
 
 </section>
@@ -862,7 +862,7 @@ IS 基本不惩罚类内多样性下降，随 $s$ 单调上升，所以“IS 最
 
 <Card id="dictionary">
 <Front>写出 score 与噪声预测之间的换算关系。</Front>
-<Back>$\nabla_{x_t} \log p_t(x_t) \approx -\epsilon_\theta(x_t, t)/\sqrt{1-\bar\alpha_t}$。来自两个事实：MSE 学到 $\mathbb E[\epsilon \mid x_t]$；边缘 score 是条件 score 按后验的加权平均。</Back>
+<Back>$\nabla_{x_t} \log p_t(x_t) \approx -\frac{\epsilon_\theta(x_t, t)}{\sqrt{1-\bar\alpha_t}}$。来自两个事实：MSE 学到 $\mathbb E[\epsilon \mid x_t]$；边缘 score 是条件 score 按后验的加权平均。</Back>
 </Card>
 
 <Card id="magnet">
@@ -892,7 +892,7 @@ IS 基本不惩罚类内多样性下降，随 $s$ 单调上升，所以“IS 最
 
 <Card id="cfg-derive">
 <Front>CFG 公式怎么从贝叶斯公式推出来？</Front>
-<Back>移项得 $\nabla \log p_t(y \mid x_t) = \nabla \log p_t(x_t \mid y) - \nabla \log p_t(x_t)$，代回目标 score，左边是锐化后的 $\tilde p_t$；三个 score 都换成 $-\epsilon/c$，同乘 $-c$ 得 $\hat\epsilon = \epsilon_\varnothing + s(\epsilon_y - \epsilon_\varnothing)$。</Back>
+<Back>移项得 $\nabla \log p_t(y \mid x_t) = \nabla \log p_t(x_t \mid y) - \nabla \log p_t(x_t)$，代回目标 score，左边是锐化后的 $\tilde p_t$；三个 score 都换成 $-\frac{\epsilon}{c}$，同乘 $-c$ 得 $\hat\epsilon = \epsilon_\varnothing + s(\epsilon_y - \epsilon_\varnothing)$。</Back>
 </Card>
 
 <Card id="why-not-fooled">

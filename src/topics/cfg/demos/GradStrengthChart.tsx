@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { scaleLinear } from 'd3-scale'
 import { line } from 'd3-shape'
 import { useReviewMode } from '@/kb/state/ReviewMode'
+import { Tex } from '@/kb/components/Tex'
+import { SvgTex } from '@/kb/components/SvgSub'
 import { classifierGradStrength } from '../lib/toy1d'
 
 type P = [number, number]
@@ -25,10 +27,10 @@ export function GradStrengthChart() {
         ))}
         <path d={d} className="stroke-cond" />
         <circle cx={x(peak[0])} cy={y(peak[1])} r={4} fill="var(--c-cond)" stroke="var(--card)" strokeWidth={2} />
-        <text x={x(peak[0])} y={y(peak[1]) - 9} textAnchor="middle" style={{ fill: 'var(--ink-2)' }}>中段最强（t ≈ {peak[0].toFixed(2)}）</text>
-        <text x={M.l} y={H - 6}>← t → 0：图像清晰，分类器已确定，梯度 ≈ 0</text>
-        <text x={W - M.r} y={H - 6} textAnchor="end">t → 1：几乎纯噪声，看不出类别 →</text>
-        <text x={12} y={M.t} transform={`rotate(-90 12 ${M.t})`} textAnchor="end">E|∇ log pₜ(y|xₜ)|</text>
+        <SvgTex x={x(peak[0])} y={y(peak[1]) - 9} w={180} align="middle" size={12} color="var(--ink-2)">中段最强（<Tex>{`t \\approx ${peak[0].toFixed(2)}`}</Tex>）</SvgTex>
+        <SvgTex x={M.l} y={H - 4} w={280} size={12} color="var(--ink-3)">← <Tex>{'t \\to 0'}</Tex>：图像清晰，分类器已确定，梯度 ≈ 0</SvgTex>
+        <SvgTex x={W - M.r} y={H - 4} w={240} align="end" size={12} color="var(--ink-3)"><Tex>{'t \\to 1'}</Tex>：几乎纯噪声，看不出类别 →</SvgTex>
+        <g transform={`rotate(-90 12 ${M.t})`}><SvgTex x={12} y={M.t + 4} w={150} align="end" size={12} color="var(--ink-3)"><Tex>{'\\mathbb{E}\\,\\lvert \\nabla \\log p_t(y \\mid x_t) \\rvert'}</Tex></SvgTex></g>
       </svg>
       <figcaption>一维双类玩具模型（类别 ±1、类内标准差 0.2）上的真实计算：guidance 主要在采样的中间阶段起作用。</figcaption>
     </figure>

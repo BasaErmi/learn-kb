@@ -39,7 +39,7 @@ export function noisedScore(x: Vec2, comps: Comp2D[], ab: number): Vec2 {
   return [sx, sy]
 }
 
-/** 第 2 步的“词典”：ε = −√(1−ᾱ) · score */
+/** 第 2 步的换算关系：ε = −√(1−ᾱ) · score */
 export function epsilon(x: Vec2, comps: Comp2D[], ab: number): Vec2 {
   const s = noisedScore(x, comps, ab)
   const c = Math.sqrt(1 - ab)

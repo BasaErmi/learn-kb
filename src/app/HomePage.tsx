@@ -13,8 +13,7 @@ export function HomePage() {
       </header>
       <ul className="kb-topic-list">
         {topics.map((t) => {
-          const visited = readJSON<string[]>(safeStorage(), `kb:${t.slug}:visited`, [])
-          const read = t.steps.filter((s) => visited.includes(s.id)).length
+          const mastered = readJSON<string[]>(safeStorage(), `kb:${t.slug}:mastered`, []).length
           return (
             <li key={t.slug}>
               <Link to={`/t/${t.slug}`} className="kb-topic-card">
@@ -22,7 +21,8 @@ export function HomePage() {
                 <h2>{t.title}</h2>
                 <p>{t.summary}</p>
                 <span className="kb-card-meta">
-                  更新于 {t.updated} · 已读 {read}/{t.steps.length}
+                  更新于 {t.updated}
+                  {mastered > 0 && ` · 已掌握 ${mastered} 张闪卡`}
                 </span>
               </Link>
             </li>

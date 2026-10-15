@@ -9,6 +9,7 @@ import { LabelDropoutDemo } from './demos/LabelDropoutDemo'
 import { SamplingLoopDemo } from './demos/SamplingLoopDemo'
 import { GuidedSamplingDemo } from './demos/GuidedSamplingDemo'
 import { MetricsChart } from './demos/MetricsChart'
+import { ScaleGrid } from './demos/ScaleGrid'
 
 <section id="overview" className="kb-section">
 
@@ -59,9 +60,11 @@ DDPM 文献习惯把真实加噪分布写成 $q(x_t)$，score / guidance 文献�
 
 <Step id="step-1" n={1} title="CFG 要解决什么问题" gist="学到了 p(x|y) 不等于生成得好：我们想要一个用多样性换质量的旋钮。">
 
+<Anchor id="sharpen-goal" />
+
 <KeyPoint>
 
-我们想从一个**锐化**过的分布采样：
+普通条件生成从 $p(x \mid y) \propto p(x)\,p(y \mid x)$ 采样。我们想从一个**锐化**过的分布采样，也就是给第二个因子加上指数 $s$：
 
 $$
 \tilde p(x \mid y) \propto p(x)\,p(y \mid x)^{s}
@@ -86,13 +89,25 @@ $$
 L = \mathbb{E}_{x_0,\,y,\,t,\,\epsilon}\left[\left\|\epsilon - \epsilon_\theta(x_t, t, y)\right\|^2\right]
 $$
 
-$y$ 通常经过一个 embedding 表变成向量，再和时间步 embedding 一起注入网络。理论上，这个模型学到的就是 $p(x \mid y)$。
+$y$ 通常经过一个 embedding 表变成向量，再和时间步 embedding 一起注入网络。理论上，这个模型学到的就是 $p(x \mid y)$，采样时也就是从它采样。用贝叶斯公式把它拆开：
+
+$$
+p(x \mid y) = \frac{p(x)\,p(y \mid x)}{p(y)} \propto p(x)\,p(y \mid x)
+$$
+
+$p(y)$ 与 $x$ 无关，只是归一化常数。这样条件分布就拆成了两个因子：$p(x)$ 是“这张图本身有多常见”，$p(y \mid x)$ 是“这张图有多像类别 $y$”。后面所有的改动，都只针对第二个因子。
 
 ### 学得“对”不等于生成得“好”
 
 即使模型完美学到了 $p(x \mid y)$，直接从中采样，结果也往往不够好，原因有两个。
 
 **真实分布本身就很“宽”。** ImageNet 的“金毛”类里有正脸特写，也有狗只占一个角落的远景、模糊照、被遮挡的照片。这些都属于 $p(x \mid y)$，按真实比例采样，自然会生成不少“不太像金毛”或质量一般的图。
+
+<div className="kb-figrow">
+  <Figure src="images/cfg/golden-typical.jpg" alt="站在草地上的金毛侧面全身照" caption="典型：主体完整清晰、特征明显" />
+  <Figure src="images/cfg/golden-atypical.jpg" alt="海滩上背对镜头的金毛" caption="非典型：背影、主体偏小，仍属于这个类别，s 增大后很少再被采到" />
+  <Figure src="images/cfg/golden-low-quality.jpg" alt="运动模糊、倒着入镜的金毛" caption="低质量：运动模糊、构图崩坏，位于分布尾部，锐化首先压掉的就是它们" />
+</div>
 
 **模型有误差。** 网络容量和数据有限，学到的分布会在低密度区域偏宽、偏散。从分布“尾部”采到的样本，往往就是结构崩坏、语义模糊的图。
 
@@ -105,7 +120,7 @@ $y$ 通常经过一个 embedding 表变成向量，再和时间步 embedding 一
 - 语言模型的 **temperature**：调低温度，分布变尖，输出更稳定但更单调
 - GAN 的 **truncation trick**：把潜变量限制在均值附近，质量提高、多样性下降
 
-用公式表达这个愿望，就是上面要点框里的 $p(x)\,p(y \mid x)^s$：$p(y \mid x)$ 衡量“这张图有多像类别 $y$”，给它加上指数 $s$，就是放大“像 $y$”的样本、压低“不太像 $y$”的样本。
+用公式表达这个愿望：把普通条件生成的 $p(x \mid y) \propto p(x)\,p(y \mid x)$ 里的第二个因子加上指数 $s$，得到<Ref to="sharpen-goal">上面要点框</Ref>里的 $p(x)\,p(y \mid x)^s$。$p(y \mid x)$ 衡量“这张图有多像类别 $y$”，给它加上指数，就是放大“像 $y$”的样本、压低“不太像 $y$”的样本；$s = 1$ 时退回普通条件生成。
 
 ### 每个值都变小了，为什么概率反而集中？
 
@@ -144,15 +159,9 @@ $$
 
 > 怎么通过修改每一步的噪声预测，让整个采样过程等价于从锐化后的分布采样？
 
-回答它需要先建立“噪声预测”和“概率密度”之间的联系，这就是第 2 步。
+回答它需要先建立“噪声预测”和“概率密度”之间的联系，这就是<Ref to="step-2">第 2 步</Ref>。
 
 </Detail>
-
-<div className="kb-figrow">
-  <Figure src="images/cfg/golden-typical.jpg" alt="站在草地上的金毛侧面全身照" caption="典型：主体完整清晰、特征明显" source={{ label: 'Stanford Dogs via dog.ceo', href: 'https://dog.ceo/dog-api/breeds-image-random' }} />
-  <Figure src="images/cfg/golden-atypical.jpg" alt="海滩上背对镜头的金毛" caption="非典型：背影、主体偏小，仍属于这个类别，s 增大后很少再被采到" source={{ label: 'Stanford Dogs via dog.ceo', href: 'https://dog.ceo/dog-api/breeds-image-random' }} />
-  <Figure src="images/cfg/golden-low-quality.jpg" alt="运动模糊、倒着入镜的金毛" caption="低质量：运动模糊、构图崩坏，位于分布尾部，锐化首先压掉的就是它们" source={{ label: 'dog.ceo', href: 'https://dog.ceo/dog-api/breeds-image-random' }} />
-</div>
 
 <SharpenDemo />
 
@@ -179,7 +188,9 @@ $s = 1$ 也**不是**“只挑最相关的样本”：由贝叶斯公式 $p(x)\,
 
 </Step>
 
-<Step id="step-2" n={2} title="噪声预测就是 score" gist="网络预测的噪声和对数密度的梯度只差一个已知系数——这是把“改分布”翻译成“改网络输出”的词典。">
+<Step id="step-2" n={2} title="噪声预测就是 score" gist="网络预测的噪声和对数密度的梯度只差一个已知系数——这条换算关系把“改分布”翻译成“改网络输出”。">
+
+<Anchor id="score-eps" />
 
 <KeyPoint>
 
@@ -189,13 +200,15 @@ $$
 
 条件模型同理：$\nabla_{x_t} \log p_t(x_t \mid y) \approx -\epsilon_\theta(x_t, t, y) / \sqrt{1-\bar\alpha_t}$。
 
+后文把这个式子称为 **score 与噪声的换算关系**（简称换算关系），文献里一般说成噪声预测与 score 等价（$\epsilon$-prediction 是 score 的一种参数化）。
+
 **分布的乘法、取幂 → score 的加法、数乘 → $\epsilon$ 的加法、数乘。**
 
 </KeyPoint>
 
 <Pitfall title="这一步的定位">
 
-第 2 步讲的是扩散模型的 score 视角，**属于扩散基础，本身还不是 CFG**。它只证明了一句话：网络预测的噪声就是数据分布的 score（差一个系数）。之所以必须讲，是因为 CFG 的公式完全是在 score 上做加减推出来的；没有这本“词典”，第 4 步的公式看起来就像凭经验拍出来的技巧。
+第 2 步讲的是扩散模型的 score 视角，**属于扩散基础，本身还不是 CFG**。它只证明了一句话：网络预测的噪声就是数据分布的 score（差一个系数）。之所以必须讲，是因为 CFG 的公式完全是在 score 上做加减推出来的；没有这条换算关系，<Ref to="cfg-formula">第 4 步的公式</Ref>看起来就像凭经验拍出来的技巧。
 
 </Pitfall>
 
@@ -219,6 +232,14 @@ $$
 4. **高斯的 score 是线性的。** $\mathcal N(\mu, \sigma^2 I)$ 的 score 是 $-(x-\mu)/\sigma^2$。
 5. **知道 score 就能采样。** Langevin dynamics $x \leftarrow x + \tfrac{\eta}{2}\nabla_x \log p(x) + \sqrt{\eta}\,z$ 在步长足够小、迭代足够多时收敛到 $p$。
 
+<Aside title="为什么需要一串噪声水平">
+
+直接对数据分布做 Langevin 有问题：从纯噪声出发时，起点处在数据分布的极低密度区域，那里几乎没有训练数据，score 估不准。扩散模型准备了一串噪声逐渐降低的分布 $p_T, \dots, p_0$：起点 $p_T \approx \mathcal N(0, I)$ 很好采样，每一步用**当前噪声水平**的 score，最后落到 $p_0$。这就是网络要输入 $t$ 的原因。加噪本质上是用高斯核把数据分布“抹开”，抹开后原本空荡荡的区域也有了合理的密度和 score。
+
+连续时间的严格版本是 **逆向 SDE**（Song et al. 2021）：加噪过程写成 SDE，它的时间反向 SDE 漂移项里正好含 $\nabla_x \log p_t(x)$。DDPM 采样是它的一种离散化，$\eta = 0$ 的 DDIM 对应去掉随机项的 probability flow ODE。
+
+</Aside>
+
 ### 单个样本：高斯的 score
 
 已知干净图像 $x_0$ 时，$q(x_t \mid x_0) = \mathcal{N}\left(\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t) I\right)$，代入高斯 score，再利用 $x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$：
@@ -233,7 +254,11 @@ $$
 
 采样时只有 $x_t$，需要的是边缘分布 $p_t(x_t)$ 的 score。这需要两个事实。
 
+<Anchor id="fact-1" />
+
 **事实 1：MSE 回归学到的是条件期望。** 同一个 $x_t$ 可能由不同的 $(x_0, \epsilon)$ 组合产生，最小化平方误差的最优解是平均：$\epsilon_\theta^*(x_t, t) = \mathbb{E}[\epsilon \mid x_t]$。
+
+<Anchor id="fact-2" />
 
 **事实 2：边缘 score 是条件 score 按后验的加权平均。** 推导只需要把边缘分布写成积分：
 
@@ -259,41 +284,31 @@ $$
 
 最后一步的约等号只来自“用网络输出代替真实的条件期望”，**分布本身没有变**。
 
+<Aside title="期望的下标能不能省？">
+
+第三行里 $\mathbb{E}[\epsilon \mid x_t]$ 看不到 $x_0$，但**不能**把它当成无条件期望。给定 $x_t$ 后，$\epsilon = (x_t - \sqrt{\bar\alpha_t}\,x_0)/\sqrt{1-\bar\alpha_t}$ 的随机性完全来自 $x_0$，分布就藏在竖线 $\mid x_t$ 里。$\mathbb{E}_{x_0 \sim q(x_0 \mid x_t)}[\cdot]$ 和 $\mathbb{E}[\cdot \mid x_t]$ 只是两种记号。如果真去掉条件，$\epsilon \sim \mathcal N(0, I)$ 的期望恒为 0，score 也恒为 0，显然不对：演示里 $x_t = (0.6, 0.3)$ 在最可能的来源 D、E 加噪后的中心的左下方，所以 $\mathbb{E}[\epsilon \mid x_t] = (-0.624, -0.461)$ 也朝左下，并不是 0。
+
+判断规则：只有当被平均的式子**完全不依赖**那个随机变量时，期望才是多余的；只要还需要写 $\mathbb E$，它的分布就必须明确，要么写在下标，要么通过条件隐含。
+
+</Aside>
+
 ### 直觉：每个来源都在拉，按可能性加权
 
 把每个数据点 $x_0$ 想成一块磁铁，各自把 $x_t$ 往自己那边拉（拉力就是上面的单样本 score）。真实的 score 是**所有拉力的加权平均**，权重是“$x_t$ 来自这个 $x_0$ 的可能性”，即后验 $q(x_0 \mid x_t)$。离 $x_t$ 近的来源权重大。
 
-同一件事从网络的角度看：每个来源对应一个噪声 $\epsilon$，网络分不清是哪个，只能输出按可能性加权的“平均噪声”。每个来源的拉力恰好是它对应噪声的 $-1/\sqrt{1-\bar\alpha_t}$ 倍，所以两个平均也只差这个系数。下面的演示可以直接验证：$x_t = 1.5$、$\sigma = 1$ 时，后验是 95.3% / 4.7%，score $= -0.595$，平均噪声 $= 0.595$。
+同一件事从网络的角度看：每个来源对应一个噪声 $\epsilon = (x_t - \sqrt{\bar\alpha_t}\,x_0)/\sqrt{1-\bar\alpha_t}$，网络分不清是哪个，只能输出按可能性加权的“平均噪声” $\mathbb{E}[\epsilon \mid x_t]$。每个来源的拉力 $\nabla_{x_t} \log q(x_t \mid x_0)$ 恰好是它对应噪声的 $-1/\sqrt{1-\bar\alpha_t}$ 倍，所以两个平均也只差这个系数，这正是<Ref to="fact-2">事实 2</Ref> 的最后一行。下面的演示可以直接验证：7 个数据点、$t = 0.45$（$\bar\alpha_t \approx 0.572$）、$x_t = (0.6, 0.3)$ 时，右上的 D、E 两点后验权重为 45.7% / 39.1%，下方的 F 还有 7.4%；平均噪声 $\mathbb{E}[\epsilon \mid x_t] = (-0.624, -0.461)$，除以 $-\sqrt{1-\bar\alpha_t}$ 正好得到 score $= (0.953, 0.704)$。把各条拉力都乘上 $1-\bar\alpha_t$ 画出来，每条正好从 $x_t$ 指到 $\sqrt{\bar\alpha_t}\,x_0$（这个来源加噪后的中心），而加权平均后的 score 指向它们的加权重心 $\sqrt{\bar\alpha_t}\,\mathbb E[x_0 \mid x_t]$。
 
-### 期望的下标能不能省？
-
-第三行里 $\mathbb{E}[\epsilon \mid x_t]$ 看不到 $x_0$，但**不能**把它当成无条件期望。给定 $x_t$ 后，$\epsilon = (x_t - \sqrt{\bar\alpha_t}\,x_0)/\sqrt{1-\bar\alpha_t}$ 的随机性完全来自 $x_0$，分布就藏在竖线 $\mid x_t$ 里。$\mathbb{E}_{x_0 \sim q(x_0 \mid x_t)}[\cdot]$ 和 $\mathbb{E}[\cdot \mid x_t]$ 只是两种记号。如果真去掉条件，$\epsilon \sim \mathcal N(0, I)$ 的期望恒为 0，score 也恒为 0，显然不对：知道了 $x_t = 1.5$，噪声多半是正的。
-
-判断规则：只有当被平均的式子**完全不依赖**那个随机变量时，期望才是多余的；只要还需要写 $\mathbb E$，它的分布就必须明确，要么写在下标，要么通过条件隐含。
-
-### 为什么需要一串噪声水平
-
-直接对数据分布做 Langevin 有问题：从纯噪声出发时，起点处在数据分布的极低密度区域，那里几乎没有训练数据，score 估不准。扩散模型准备了一串噪声逐渐降低的分布 $p_T, \dots, p_0$：起点 $p_T \approx \mathcal N(0, I)$ 很好采样，每一步用**当前噪声水平**的 score，最后落到 $p_0$。这就是网络要输入 $t$ 的原因。加噪本质上是用高斯核把数据分布“抹开”，抹开后原本空荡荡的区域也有了合理的密度和 score。
-
-连续时间的严格版本是 **逆向 SDE**（Song et al. 2021）：加噪过程写成 SDE，它的时间反向 SDE 漂移项里正好含 $\nabla_x \log p_t(x)$。DDPM 采样是它的一种离散化，$\eta = 0$ 的 DDIM 对应去掉随机项的 probability flow ODE。
-
-### 这对 CFG 意味着什么
-
-score 和 $\epsilon_\theta$ 之间只差一个只依赖 $t$ 的固定系数，所以 score 上的加法和数乘可以原封不动地搬到 $\epsilon$ 上。想从 $p(x)\,p(y \mid x)^s$ 采样，只要算出它的 score、换算成“噪声预测”，交给 DDPM / DDIM 的更新公式即可：**网络不变，采样器也不变**，所有改动都发生在“网络输出”和“采样器输入”之间。
-
-严格来说，CFG 是在**每个噪声水平**上锐化 $p_t$，这和“最终精确地从 $p_0(x)\,p_0(y \mid x)^s$ 采样”并不完全等价，只是近似。实践中效果很好。
+<MagnetDemo />
 
 </Detail>
 
 <ForwardNoiseDemo />
 
-<MagnetDemo />
-
 <ScoreFieldDemo />
 
 <Pitfall>
 
-事实 2 里的期望 $\mathbb{E}[\epsilon \mid x_t]$ 是**条件**期望，分布藏在 $\mid x_t$ 中。去掉条件就变成 $\mathbb{E}[\epsilon] = 0$。
+<Ref to="fact-2">事实 2</Ref> 里的期望 $\mathbb{E}[\epsilon \mid x_t]$ 是**条件**期望，分布藏在 $\mid x_t$ 中。去掉条件就变成 $\mathbb{E}[\epsilon] = 0$。
 
 </Pitfall>
 
@@ -305,7 +320,7 @@ score 和 $\epsilon_\theta$ 之间只差一个只依赖 $t$ 的固定系数，�
 
 - $x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon \approx \epsilon$，图像信息几乎被抹掉，所以 $p(x_t) \approx \mathcal N(0, I)$，这也是采样从标准高斯出发的原因。
 - 标准高斯的 score 是 $-x_t$，指向原点。
-- 代入词典且 $\sqrt{1-\bar\alpha_t} \to 1$：$\epsilon_\theta(x_t, t) \approx x_t$，网络几乎只需“原样输出输入”。
+- 代入换算关系 $\epsilon_\theta(x_t, t) \approx -\sqrt{1-\bar\alpha_t}\,\nabla_{x_t} \log p_t(x_t)$，且 $\sqrt{1-\bar\alpha_t} \to 1$：$\epsilon_\theta(x_t, t) \approx x_t$，网络几乎只需“原样输出输入”。
 
 用加权平均的视角看：后验退化成先验，每个来源给出的噪声都约等于 $x_t$，平均后还是 $x_t$。反过来，$t$ 越小，$x_t$ 越能暴露来源，网络越需要真正“理解图像”。
 
@@ -331,93 +346,82 @@ $$
 
 ### 先把目标写清楚
 
+<Anchor id="cg-bayes" />
+
 对条件分布用贝叶斯公式，取对数再对 $x_t$ 求梯度（$p(y)$ 与 $x_t$ 无关，梯度为 0）：
 
 $$
 \nabla_{x_t} \log p_t(x_t \mid y) = \nabla_{x_t} \log p_t(x_t) + \nabla_{x_t} \log p_t(y \mid x_t)
 $$
 
-这是 $s = 1$ 的情况。给第二项乘上 $s$，就是第 1 步的锐化，只是现在在每个噪声水平上做：
+<Anchor id="cg-target" />
+
+这是 $s = 1$ 的情况。给第二项乘上 $s$，就是<Ref to="sharpen-goal">第 1 步的锐化</Ref>，只是现在在每个噪声水平 $t$ 上做：
 
 $$
 \underbrace{\nabla_{x_t} \log p_t(x_t)}_{\text{第一项}} \;+\; s\,\underbrace{\nabla_{x_t} \log p_t(y \mid x_t)}_{\text{第二项}}
 $$
 
-第一项现成就有：用无条件噪声预测按词典换算。**难的只是第二项。**
-
-### 第二项是什么
-
-$p_t(y \mid x_t)$ 是“看到一张加噪到第 $t$ 步的图，判断它属于类别 $y$ 的概率”，这正是分类器的输出。$\nabla_{x_t} \log p_t(y \mid x_t)$ 是分类器对类别 $y$ 的对数概率对**输入图像**的梯度，和 saliency map、对抗样本是同一个计算：前向通过分类器，取 $y$ 的 log-softmax，反向传播到输入。直觉含义是“把这张图往哪个方向改一点，它会更像 $y$”。
-
-### $p_t$ 的下标 $t$ 起什么作用
-
-$p_t$ 不是一个分布，而是一族：从数据集里取一张图、加噪到第 $t$ 步，得到的 $x_t$ 服从的就是 $p_t$。条件版本只是 $x_0$ 只从类别 $y$ 里取：
+第一项现成就有。按<Ref to="score-eps">第 2 步的换算关系</Ref>，无条件噪声预测换算一下就是它：
 
 $$
-p_t(x_t) = \int p(x_0)\,q(x_t \mid x_0)\,dx_0, \qquad p_t(x_t \mid y) = \int p(x_0 \mid y)\,q(x_t \mid x_0)\,dx_0
+\nabla_{x_t} \log p_t(x_t) \approx -\frac{\epsilon_\theta(x_t, t)}{\sqrt{1-\bar\alpha_t}}
 $$
 
-$p_t(y \mid x_t)$ 也随 $t$ 变化：$t$ 小时图像清晰、很好判断；$t$ 大时几乎全是噪声，$p_t(y \mid x_t)$ 趋近先验 $p(y)$，几乎不随 $x_t$ 变化。采样到第 $t$ 步时，手里的 $x_t$ 处在噪声水平 $t$ 上，必须用**这一层**的 score。用错层（比如在很噪的 $x_t$ 上用 $p_0$ 的 score）没有意义。
+**难的只是第二项。**
+
+### 第二项其实是一个分类器
+
+$p_t(y \mid x_t)$ 是“看到一张加噪到第 $t$ 步的图，判断它属于类别 $y$ 的概率”，这正是分类器的输出。$\nabla_{x_t} \log p_t(y \mid x_t)$ 是分类器对类别 $y$ 的对数概率对**输入图像**的梯度，和 saliency map、对抗样本是同一个计算：把图像送进分类器，取 $y$ 的 log-softmax，再用自动微分求它对**输入**的导数（PyTorch 里就是 `torch.autograd.grad(log_prob, x_t)`）。整个过程不涉及训练，分类器参数一个都不动，求出来的只是一个和图像同形状的方向向量。直觉含义是“把这张图往哪个方向改一点，它会更像 $y$”。
+
+所以只要有一个分类器，第二项就能算出来。但要注意它的输入是 $x_t$，而不是干净图像：采样的每一步拿到的都是某个噪声水平上的带噪图像，分类器必须在**这个噪声水平上**给出类别判断。
 
 ### 为什么不能用现成的分类器
 
-ImageNet 上训好的 ResNet 从没见过纯噪声一样的输入，在上面给出的概率和梯度没有意义，而采样前一大半步骤都处在高噪声区域。所以必须专门训练一个**噪声感知分类器** $p_\phi(y \mid x_t, t)$：输入带噪图像和时间步，按前向过程造出 $x_t$，用交叉熵训练：
+ImageNet 上训好的 ResNet 只见过干净图像。采样前一大半步骤都处在高噪声区域，输入看起来几乎是纯噪声，现成分类器在上面给出的概率和梯度都没有意义。而且同一张图在不同噪声水平下，“该有多确定”本身就不同：$t$ 小时图像清晰、很好判断；$t$ 大时几乎全是噪声，$p_t(y \mid x_t)$ 应该接近先验 $p(y)$。一个不知道 $t$ 的分类器做不到这一点。
+
+所以要专门训练一个**噪声感知分类器** $p_\phi(y \mid x_t, t)$，它同时输入带噪图像和时间步。训练数据按前向过程 $x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$ 现造，用交叉熵训练：
 
 $$
 L_\phi = \mathbb{E}_{x_0,\,y,\,t,\,\epsilon}\left[-\log p_\phi(y \mid x_t, t)\right]
 $$
 
-### 翻译回噪声预测：单位换算
+训练好之后，就用它的梯度近似第二项：$\nabla_{x_t} \log p_t(y \mid x_t) \approx \nabla_{x_t} \log p_\phi(y \mid x_t, t)$。
 
-合起来的目标 score 是
+### 翻译回噪声预测
+
+把两项的近似代进去，合起来的目标 score 是
 
 $$
-\hat s = -\frac{\epsilon_\theta(x_t, t)}{\sqrt{1-\bar\alpha_t}} + s\,\nabla_{x_t} \log p_\phi(y \mid x_t, t)
+\hat s = \underbrace{-\frac{\epsilon_\theta(x_t, t)}{\sqrt{1-\bar\alpha_t}}}_{\text{第一项（由 } \epsilon_\theta \text{ 换算）}} + s\,\underbrace{\nabla_{x_t} \log p_\phi(y \mid x_t, t)}_{\text{第二项（由分类器给出）}}
 $$
 
-采样器（DDPM / DDIM 的更新公式）只接受“噪声预测”格式的输入，所以要问：**哪个 $\hat\epsilon$ 对应这个 score？** 由词典 $\hat s = -\hat\epsilon / \sqrt{1-\bar\alpha_t}$ 解出 $\hat\epsilon = -\sqrt{1-\bar\alpha_t}\,\hat s$，代入后第一项的系数正好抵消，第二项带上 $-\sqrt{1-\bar\alpha_t}$，就得到要点框里的公式。
+采样器（DDPM / DDIM 的更新公式）只接受“噪声预测”格式的输入，所以要问：**哪个 $\hat\epsilon$ 对应这个 score？** 按同一条换算关系 $\hat s = -\hat\epsilon / \sqrt{1-\bar\alpha_t}$，反解出 $\hat\epsilon$ 再代入 $\hat s$：
 
-这里乘系数**不是**因为“只关心方向、不关心大小”。恰恰相反，大小非常重要：这是**单位换算**，就像把 km/h 换成 m/s，数值变了，表示的还是同一个方向、同一个步长。乱乘系数会让 $x_{t-1}$ 算错。而且系数乘在**整个式子**上，两项之间的相对比例（由 $s$ 决定）保持不变；只乘其中一项，就等于偷偷改了 guidance 强度。验证：令 $s = 0$，得到 $\hat\epsilon = \epsilon_\theta$，退化成普通采样。
+$$
+\begin{aligned}
+\hat\epsilon &= -\sqrt{1-\bar\alpha_t}\;\hat s \\
+&= -\sqrt{1-\bar\alpha_t}\left[-\frac{\epsilon_\theta(x_t, t)}{\sqrt{1-\bar\alpha_t}} + s\,\nabla_{x_t} \log p_\phi(y \mid x_t, t)\right] \\
+&= \epsilon_\theta(x_t, t) - s\,\sqrt{1-\bar\alpha_t}\;\nabla_{x_t} \log p_\phi(y \mid x_t, t)
+\end{aligned}
+$$
+
+第一项的系数正好抵消，第二项带上了 $-\sqrt{1-\bar\alpha_t}$。
 
 ### 每一步采样做什么
 
 1. 扩散模型前向，得到 $\epsilon_\theta(x_t, t)$
-2. 分类器前向 + 反向传播到输入，得到 $\nabla_{x_t} \log p_\phi(y \mid x_t, t)$
-3. 组合出 $\hat\epsilon$
+2. 分类器前向，再对输入 $x_t$ 求梯度，得到 $\nabla_{x_t} \log p_\phi(y \mid x_t, t)$
+3. 组合出 $\hat\epsilon = \epsilon_\theta(x_t, t) - s\,\sqrt{1-\bar\alpha_t}\;\nabla_{x_t} \log p_\phi(y \mid x_t, t)$
 4. 把 $\hat\epsilon$ 当普通噪声预测，代入 DDPM 或 DDIM 更新，得到 $x_{t-1}$
 
-两个模型**各训各的**，之间没有任何梯度交换；采样时 $\theta$ 和 $\phi$ 都不更新。反向传播只为算出一个方向向量：
-
-```python
-eps = diffusion_model(x_t, t)                    # 普通前向，不需要梯度
-
-with torch.enable_grad():
-    x_in = x_t.detach().requires_grad_(True)     # 只对输入开梯度
-    logits = classifier(x_in, t)
-    log_prob = F.log_softmax(logits, dim=-1)[range(B), y]
-    grad = torch.autograd.grad(log_prob.sum(), x_in)[0]   # ∇_x log p(y|x_t)
-
-eps_hat = eps - s * sqrt(1 - alpha_bar_t) * grad
-x_prev = sampler_step(x_t, eps_hat, t)           # 交给 DDPM / DDIM
-```
-
-`autograd.grad(..., x_in)` 只对 `x_in` 求导，分类器参数的梯度根本不计算，也没有 optimizer。这和生成对抗样本的设置一样，区别只是对抗攻击会反复优化输入，而这里每个去噪步只用一次梯度。代价是每步多一次分类器的前向加反向。
+两个模型**各训各的**，之间没有任何梯度交换；采样时 $\theta$ 和 $\phi$ 都不更新。代价是每一步除了扩散模型的前向，还要多做一次分类器的前向和对输入求梯度。
 
 这个方法出自 Dhariwal & Nichol 2021 年的 *Diffusion Models Beat GANs on Image Synthesis*：扩散模型第一次在 ImageNet 上全面超过 GAN，guidance 是关键之一。
 
 </Detail>
 
 <CGPipeline />
-
-<GradStrengthChart />
-
-**它的三个缺点**，正是它们催生了 CFG：
-
-1. **要多训练一个网络**，而且必须是在带噪图像上训练的专用分类器，现成模型都用不了。
-2. **梯度可能是“骗”出来的**：这个梯度和对抗样本是同一个计算，沿着它走，很容易找到人眼看不出、但分类器置信度大幅上升的扰动。guidance 可能把图像推向“让分类器满意”而不是“真的更像 $y$”。
-3. **条件一复杂就做不了**：类别只有 1000 个，分类器好训；条件是一句文本时，几乎没法直接训练出 $p(\text{这句话} \mid \text{图像})$ 这样的分类器。
-
-三个缺点都来自同一个根源：**第二项靠一个额外的分类器提供**。
 
 <Pitfall>
 
@@ -433,15 +437,29 @@ x_prev = sampler_step(x_t, eps_hat, t)           # 交给 DDPM / DDIM
 
 $\log p_\phi \to 0$，而且 softmax 饱和后对输入几乎不敏感，梯度趋近 0，于是 $\hat\epsilon \approx \epsilon_\theta(x_t, t)$，这一步基本退化成无条件预测。
 
-推论：在**极高**噪声时 $p_t(y \mid x_t)$ 接近常数，梯度也很小；梯度最大的是中间那段，图像刚开始显露结构、分类器又还不确定的时候（上面的曲线）。这也加重了缺点 2：分类器一旦“被说服”就不再推，哪怕它是被对抗式扰动骗到的。
+推论：在**极高**噪声时 $p_t(y \mid x_t)$ 接近常数，梯度也很小；梯度最大的是中间那段，图像刚开始显露结构、分类器又还不确定的时候（下面的曲线）。另外，分类器一旦“被说服”就不再推，哪怕它是被对抗式扰动骗到的，这一点和下面要讲的缺点 2 有关。
+
+<GradStrengthChart />
 
 </Answer>
 
 </Quiz>
 
+<Anchor id="cg-drawbacks" />
+
+这套方法确实有效，但回头看整个流程：第一项由扩散模型自己给出，第二项却完全依赖一个额外训练的分类器。正是这个依赖带来了**三个缺点**：
+
+1. **要多训练一个网络**，而且必须是在带噪图像上训练的专用分类器，现成模型都用不了。
+2. **梯度可能是“骗”出来的**：这个梯度和对抗样本是同一个计算，沿着它走，很容易找到人眼看不出、但分类器置信度大幅上升的扰动。guidance 可能把图像推向“让分类器满意”而不是“真的更像 $y$”。
+3. **条件一复杂就做不了**：类别只有 1000 个，分类器好训；条件是一句文本时，几乎没法直接训练出 $p(\text{这句话} \mid \text{图像})$ 这样的分类器。
+
+三个缺点都来自同一个根源：**第二项靠一个额外的分类器提供**。于是自然要问：能不能不要这个分类器，只用扩散模型自己把第二项算出来？这就是<Ref to="step-4">第 4 步</Ref>要做的事，也是 CFG 名字里 classifier-free 的由来。
+
 </Step>
 
 <Step id="step-4" n={4} title="去掉分类器：推出 CFG 公式" gist="把贝叶斯公式移项，分类器的梯度就变成了两个扩散模型 score 之差。">
+
+<Anchor id="cfg-formula" />
 
 <KeyPoint>
 
@@ -457,7 +475,7 @@ $$
 
 ### 移项：隐式分类器
 
-第 3 步的贝叶斯公式里一共三项。如果手里有**条件**和**无条件**扩散模型，左边和右边第一项都是现成的，第二项直接移项：
+<Ref to="cg-bayes">第 3 步的贝叶斯公式</Ref>里一共三项。如果手里有**条件**和**无条件**扩散模型，左边和右边第一项都是现成的，第二项直接移项：
 
 $$
 \nabla_{x_t} \log p_t(y \mid x_t) = \nabla_{x_t} \log p_t(x_t \mid y) - \nabla_{x_t} \log p_t(x_t)
@@ -467,7 +485,7 @@ $$
 
 ### 代回目标式
 
-把它代回第 3 步的目标 $\nabla \log p_t(x_t) + s\,\nabla \log p_t(y \mid x_t)$。注意等号左边是**锐化后**的目标分布 $\tilde p_t(x_t \mid y) \propto p_t(x_t)\,p_t(y \mid x_t)^s$，而不是真实条件分布 $p_t(x_t \mid y)$：
+把它代回<Ref to="cg-target">第 3 步的目标</Ref> $\nabla \log p_t(x_t) + s\,\nabla \log p_t(y \mid x_t)$。注意等号左边是**锐化后**的目标分布 $\tilde p_t(x_t \mid y) \propto p_t(x_t)\,p_t(y \mid x_t)^s$，而不是真实条件分布 $p_t(x_t \mid y)$：
 
 $$
 \nabla_{x_t} \log \tilde p_t(x_t \mid y) = \nabla_{x_t} \log p_t(x_t) + s\left(\nabla_{x_t} \log p_t(x_t \mid y) - \nabla_{x_t} \log p_t(x_t)\right)
@@ -495,7 +513,7 @@ $$
 
 </Derivation>
 
-和 classifier guidance 对比：那里的结果残留了一个 $\sqrt{1-\bar\alpha_t}$，因为分类器梯度本来就是 score 单位，换算时要乘系数；CFG 里**三项全是噪声预测**，换算系数相同，乘完全部抵消。公式里只剩 $\epsilon$ 的加减：不需要分类器，也不需要反向传播。
+和 classifier guidance 对比：那里的结果残留了一个 $\sqrt{1-\bar\alpha_t}$，因为分类器梯度本来就是 score 单位，换算时要乘系数；CFG 里**三项全是噪声预测**，换算系数相同，乘完全部抵消。公式里只剩 $\epsilon$ 的加减：不需要分类器，也不需要对输入求梯度。
 
 ### 怎么读这个公式
 
@@ -515,7 +533,7 @@ $s$ 大于 1 时无条件那一项的系数为负，等于在“推开”无条�
 | --- | --- | --- |
 | 第二项从哪来 | 噪声感知分类器的输入梯度 | 条件与无条件预测之差 $\epsilon_y - \epsilon_\varnothing$ |
 | 额外模型 | 需要单独训练分类器 | 不需要，一个网络 + label dropout |
-| 采样时反向传播 | 需要（对输入求梯度） | 不需要，只有前向 |
+| 采样时求梯度 | 需要（对输入 $x_t$ 求梯度） | 不需要，只有前向 |
 | 对抗式“骗分”风险 | 较高 | 大幅缓解 |
 | 条件类型 | 类别容易，文本很难 | 只要能作为网络输入就行（类别、文本……） |
 | 采样代价 | 扩散前向 + 分类器前向和反向 | 两次扩散前向（可拼成一个 batch） |
@@ -534,11 +552,11 @@ CFG **不是**用 CLIP 那种对比学习方式训练的。它的关键是完全
 
 <Quiz>
 
-$\epsilon_y - \epsilon_\varnothing$ 扮演了分类器梯度的角色。回顾第 3 步的三个缺点，CFG 解决了哪几个？还剩下哪些代价？
+$\epsilon_y - \epsilon_\varnothing$ 扮演了分类器梯度的角色。回顾<Ref to="cg-drawbacks">第 3 步的三个缺点</Ref>，CFG 解决了哪几个？还剩下哪些代价？
 
 <Answer>
 
-- **多训一个模型**：解决了。不需要分类器，也不需要第二个扩散模型：一个网络就能同时给出 $\epsilon_y$ 和 $\epsilon_\varnothing$（第 5 步）。
+- **多训一个模型**：解决了。不需要分类器，也不需要第二个扩散模型：一个网络就能同时给出 $\epsilon_y$ 和 $\epsilon_\varnothing$（<Ref to="step-5">第 5 步</Ref>）。
 - **分类器被骗**：大幅缓解，原因是方向来自生成模型的前向输出之差（见上面的旁注）。
 - **条件类型受限**：解决了，条件只要能作为网络输入即可。
 
@@ -574,7 +592,7 @@ $$
 
 ### 为什么喂 $\varnothing$ 就学到了无条件 score
 
-还是第 2 步的事实 1。带 $\varnothing$ 的样本，网络看不到类别，只能看到 $x_t$，而这些样本的 $x_0$ 来自所有类别。MSE 回归学到条件期望，所以
+还是<Ref to="fact-1">第 2 步的事实 1</Ref>。带 $\varnothing$ 的样本，网络看不到类别，只能看到 $x_t$，而这些样本的 $x_0$ 来自所有类别。MSE 回归学到条件期望，所以
 
 $$
 \epsilon_\theta(x_t, t, \varnothing) \approx \mathbb{E}[\epsilon \mid x_t], \qquad \epsilon_\theta(x_t, t, y) \approx \mathbb{E}[\epsilon \mid x_t, y]
@@ -582,16 +600,20 @@ $$
 
 前者正是不区分类别时的平均噪声，对应无条件分布 $p_t(x_t)$ 的 score；后者对应 $p_t(x_t \mid y)$ 的 score。“把无条件当作一个特殊条件”在数学上恰好就是对的。
 
-### 为什么一个网络能同时做好两件事
+<Aside title="为什么一个网络能同时做好两件事">
 
 条件对网络来说只是一个输入，两种任务共享全部参数，差别只在条件 embedding 不同，就像一个文本模型能处理不同的 prompt。而且两个任务高度相关：无论有没有条件，网络都要先学会“从带噪图像里识别结构、估计噪声”。
 
-### $p_{\text{uncond}}$ 怎么取
+</Aside>
+
+<Aside title="$p_{\text{uncond}}$ 怎么取">
 
 - 太小：无条件预测学得差，$\epsilon_\varnothing$ 不准，guidance 方向 $\epsilon_y - \epsilon_\varnothing$ 也就不准。
 - 太大：分走太多训练量，条件生成本身变弱。
 
 无条件预测在 CFG 里只是“参照点”，不需要特别好，所以 10% 左右通常够用。CFG 能成为标准做法，很大程度上就因为它几乎零成本：不需要额外模型，网络结构不变，只多一个空条件的 embedding。
+
+</Aside>
 
 </Detail>
 
@@ -651,24 +673,7 @@ $$
 
 ### 一次前向算两个预测
 
-常见做法是把输入拼成双倍大小的 batch，一次算完再拆开：
-
-```python
-def cfg_step(model, x_t, t, y, s, null_label):
-    B = x_t.shape[0]
-    x_in = torch.cat([x_t, x_t], dim=0)                          # 同一个 x_t 复制两份
-    t_in = torch.cat([t, t], dim=0)
-    y_in = torch.cat([y, torch.full_like(y, null_label)], dim=0)  # 前半有条件，后半空条件
-
-    eps = model(x_in, t_in, y_in)                                 # 一次前向
-    eps_y, eps_null = eps[:B], eps[B:]                            # 拆开
-
-    return eps_null + s * (eps_y - eps_null)                      # CFG 组合
-
-x = torch.randn(B, C, H, W)                                       # 从纯噪声出发
-for t in timesteps:                                               # 如 DDIM 的 50 步，从大到小
-    x = ddim_update(x, cfg_step(model, x, t, y, s, null_label), t)
-```
+常见做法是把输入拼成双倍大小的 batch，一次算完再拆开。完整代码和逐步演示见<Ref to="sampling-loop">下方「采样时每一步做什么」</Ref>。
 
 ### 代价
 
@@ -678,13 +683,17 @@ for t in timesteps:                                               # 如 DDIM 的
 
 这是 CFG 最主要的成本。后来有工作专门处理它，比如 guidance distillation：训练一个学生网络，一次前向直接输出 $\hat\epsilon$。
 
-### 常见约定
+<Aside title="常见约定">
 
 - 通常从第一步到最后一步都做 guidance，$s$ 保持不变；也有工作只在部分步骤使用或让 $s$ 随 $t$ 变化，属于调参技巧。
 - $s$ 只在采样时设定，同一个模型可以用不同的 $s$ 采样。
 - guidance 只作用在噪声预测上：如果网络还有别的输出（比如 DiT 同时预测方差），那部分一般不做组合。
 
+</Aside>
+
 </Detail>
+
+<Anchor id="sampling-loop" />
 
 <SamplingLoopDemo />
 
@@ -746,9 +755,11 @@ $s$ 越大，“很像 $y$”和“不太像 $y$”的样本之间的概率差�
 | 从 1 适当增大 | ↑ | 略降 | ↑ | ↓（变好） | ↑ | 略降 |
 | 继续增大 | 先升后出伪影 | ↓↓ | 仍 ↑ | ↑（变差） | ↑ | ↓↓ |
 
-### 为什么文本条件要更大的 $s$
+<Aside title="为什么文本条件要更大的 $s$">
 
 文本 embedding 对图像的约束比一个类别标签更“软”、更分散，条件预测和无条件预测的差别相对更小，需要放大更多倍才能让图像充分贴合 prompt。所以类别条件的 DiT 用 1.5 左右求最优 FID，而文生图常用 7.5。
+
+</Aside>
 
 </Detail>
 
@@ -756,9 +767,7 @@ $s$ 越大，“很像 $y$”和“不太像 $y$”的样本之间的概率差�
 
 <MetricsChart />
 
-<Figure src="images/cfg/dit-samples-0.jpg" alt="DiT-XL/2 生成的 ImageNet 样例" caption="DiT-XL/2 在 ImageNet 上的生成样例，guidance scale 4.0：单张图非常清晰典型。注意论文展示图用的 s 比求最优 FID 的 1.5 大得多。" source={{ label: 'facebookresearch/DiT', href: 'https://github.com/facebookresearch/DiT' }} wide />
-
-<Figure src="images/cfg/dit-samples-1.jpg" alt="DiT-XL/2 生成的另一组样例" caption="同一模型、同一 guidance scale 的另一组样例。" source={{ label: 'facebookresearch/DiT', href: 'https://github.com/facebookresearch/DiT' }} wide />
+<ScaleGrid />
 
 | 设置 | $s$ | 结果 |
 | --- | --- | --- |
@@ -791,7 +800,7 @@ IS 基本不惩罚类内多样性下降，随 $s$ 单调上升，所以“IS 最
 | --- | --- |
 | 目标分布（锐化） | $\tilde p(x \mid y) \propto p(x)\,p(y \mid x)^{s}$ |
 | 目标 score | $\nabla \log p_t(x_t) + s\,\nabla \log p_t(y \mid x_t)$ |
-| score ↔ 噪声预测（词典） | $\nabla_{x_t} \log p_t(x_t) \approx -\epsilon_\theta(x_t, t) / \sqrt{1-\bar\alpha_t}$ |
+| score ↔ 噪声预测（换算关系） | $\nabla_{x_t} \log p_t(x_t) \approx -\epsilon_\theta(x_t, t) / \sqrt{1-\bar\alpha_t}$ |
 | 隐式分类器 | $\nabla \log p_t(y \mid x_t) = \nabla \log p_t(x_t \mid y) - \nabla \log p_t(x_t)$ |
 | Classifier guidance | $\hat\epsilon = \epsilon_\theta(x_t, t) - s\sqrt{1-\bar\alpha_t}\,\nabla_{x_t} \log p_\phi(y \mid x_t, t)$ |
 | CFG（$s$ 约定） | $\hat\epsilon = \epsilon_\varnothing + s\,(\epsilon_y - \epsilon_\varnothing) = (1-s)\,\epsilon_\varnothing + s\,\epsilon_y$ |
@@ -812,15 +821,14 @@ IS 基本不惩罚类内多样性下降，随 $s$ 单调上升，所以“IS 最
 4. ✗ score 是对数密度 → ✓ score 是对数密度**对输入 $x$** 的梯度，不是对参数。
 5. ✗ $\mathbb E[\epsilon \mid x_t]$ 里看不到 $x_0$，下标可以省 → ✓ 随机性藏在 $x_0$ 里，分布就是后验；去掉条件会得到 0。
 6. ✗ $q(x_t)$ 和 $p(x_t)$ 是两个分布 → ✓ 同一个分布，只是 DDPM 与 score 文献的记号习惯不同。
-7. ✗ 第 2 步就是 CFG → ✓ 第 2 步是扩散基础，它提供“改分布 → 改 $\epsilon$”的词典。
+7. ✗ 第 2 步就是 CFG → ✓ 第 2 步是扩散基础，它提供“改分布 → 改 $\epsilon$”的换算关系。
 8. ✗ classifier guidance 的梯度会更新模型 → ✓ 两个模型都冻结，只对输入 $x_t$ 求梯度。
-9. ✗ 乘 $-\sqrt{1-\bar\alpha_t}$ 是因为只关心方向 → ✓ 这是单位换算，大小很重要，而且必须整个式子一起乘。
-10. ✗ CFG 推导左边写 $\nabla \log p_t(x_t \mid y)$ → ✓ 应为锐化后的 $\tilde p_t$，否则 $s \ne 1$ 时等式不成立。
-11. ✗ CFG 不被骗是因为目标类别唯一 → ✓ 因为方向来自两个生成模型的前向输出之差，而不是判别模型的输入梯度。
-12. ✗ CFG 用 CLIP 的方式训练 → ✓ CLIP 只是提供文本表示的编码器，CFG 靠 label dropout。
-13. ✗ 需要训练有条件、无条件两个模型 → ✓ 一个网络 + label dropout 同时学会两种预测。
-14. ✗ 不同论文的 guidance scale 可以直接比较 → ✓ 先确认约定：$s = 1 + w$。
-15. ✗ IS 越高生成越好 → ✓ IS 不惩罚多样性下降，要同时看 FID、precision / recall。
+9. ✗ CFG 推导左边写 $\nabla \log p_t(x_t \mid y)$ → ✓ 应为锐化后的 $\tilde p_t$，否则 $s \ne 1$ 时等式不成立。
+10. ✗ CFG 不被骗是因为目标类别唯一 → ✓ 因为方向来自两个生成模型的前向输出之差，而不是判别模型的输入梯度。
+11. ✗ CFG 用 CLIP 的方式训练 → ✓ CLIP 只是提供文本表示的编码器，CFG 靠 label dropout。
+12. ✗ 需要训练有条件、无条件两个模型 → ✓ 一个网络 + label dropout 同时学会两种预测。
+13. ✗ 不同论文的 guidance scale 可以直接比较 → ✓ 先确认约定：$s = 1 + w$。
+14. ✗ IS 越高生成越好 → ✓ IS 不惩罚多样性下降，要同时看 FID、precision / recall。
 
 </section>
 
@@ -853,7 +861,7 @@ IS 基本不惩罚类内多样性下降，随 $s$ 单调上升，所以“IS 最
 </Card>
 
 <Card id="dictionary">
-<Front>写出 score 与噪声预测之间的“词典”。</Front>
+<Front>写出 score 与噪声预测之间的换算关系。</Front>
 <Back>$\nabla_{x_t} \log p_t(x_t) \approx -\epsilon_\theta(x_t, t)/\sqrt{1-\bar\alpha_t}$。来自两个事实：MSE 学到 $\mathbb E[\epsilon \mid x_t]$；边缘 score 是条件 score 按后验的加权平均。</Back>
 </Card>
 

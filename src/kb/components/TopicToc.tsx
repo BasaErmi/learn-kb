@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { TopicStep } from '@/topics/registry'
 import { scrollToId } from '@/kb/scroll'
-import { usePersistentState } from '@/kb/state/usePersistentState'
 
-export function TopicToc({ topic, steps }: { topic: string; steps: TopicStep[] }) {
+export function TopicToc({ steps }: { steps: TopicStep[] }) {
   const [active, setActive] = useState(steps[0]?.id ?? '')
-  const [visited, setVisited] = usePersistentState<string[]>(`kb:${topic}:visited`, [])
+  // 只记本次访问的阅读进度：滚动经过 ≠ 学会，长期记录交给闪卡的「已掌握」
+  const [visited, setVisited] = useState<string[]>([])
 
   useEffect(() => {
     const els = steps.map((s) => document.getElementById(s.id)).filter((e): e is HTMLElement => !!e)

@@ -4,6 +4,7 @@ import { MDXProvider } from '@mdx-js/react'
 import { findTopic } from '@/topics/registry'
 import { TopicToc } from '@/kb/components/TopicToc'
 import { mdxComponents } from '@/kb/mdx-components'
+import { BackToReading, JumpProvider } from '@/kb/jump'
 import { NotFound } from './NotFound'
 
 export function TopicPage() {
@@ -19,9 +20,10 @@ export function TopicPage() {
   if (!topic || !Content) return <NotFound />
   return (
     <Suspense fallback={<p className="kb-loading">加载中…</p>}>
+      <JumpProvider>
       <div className="kb-topic">
         <aside className="kb-topic-side">
-          <TopicToc topic={topic.slug} steps={topic.steps} />
+          <TopicToc steps={topic.steps} />
         </aside>
         <article className="kb-prose">
           <header className="kb-topic-head">
@@ -34,6 +36,8 @@ export function TopicPage() {
           </MDXProvider>
         </article>
       </div>
+      <BackToReading />
+      </JumpProvider>
     </Suspense>
   )
 }

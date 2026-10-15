@@ -3,7 +3,7 @@ import { scaleLinear } from 'd3-scale'
 import { Demo } from '@/kb/components/Demo'
 import { Slider } from '@/kb/components/Slider'
 import { Tex } from '@/kb/components/Tex'
-import { Sub, SvgTex } from '@/kb/components/SvgSub'
+import { SvgTex } from '@/kb/components/SvgSub'
 import { cfgCombine } from '../lib/cfg'
 import type { Vec2 } from '../lib/gmm2d'
 
@@ -26,7 +26,7 @@ export function ExtrapolationDemo() {
   return (
     <Demo
       title="CFG 是沿“条件方向”外推"
-      hint={<><Tex>{'\\epsilon_y - \\epsilon_\\varnothing'}</Tex> 就是“加上条件 y 后预测变了多少”。<Tex>{'\\hat\\epsilon'}</Tex> 从 <Tex>{'\\epsilon_\\varnothing'}</Tex> 出发，沿这个方向走 s 倍。</>}
+      hint={<><Tex>{'\\epsilon_y - \\epsilon_\\varnothing'}</Tex> 就是“加上条件 <Tex>y</Tex> 后预测变了多少”。<Tex>{'\\hat\\epsilon'}</Tex> 从 <Tex>{'\\epsilon_\\varnothing'}</Tex> 出发，沿这个方向走 <Tex>s</Tex> 倍。</>}
       onReset={() => setS(3)}
     >
       <svg viewBox={`0 0 ${W} ${H}`} className="kb-chart" role="img" aria-label="外推示意">
@@ -44,9 +44,9 @@ export function ExtrapolationDemo() {
         {vec(eh, 'guided')}
         <line x1={x(EU[0])} y1={y(EU[1])} x2={x(eh[0])} y2={y(eh[1])} stroke="var(--c-guided)" strokeWidth={8} opacity={0.13} strokeLinecap="round" />
         <circle cx={x(EU[0])} cy={y(EU[1])} r={5} fill="var(--c-uncond)" stroke="var(--card)" strokeWidth={2} />
-        <text x={x(EU[0]) + 10} y={y(EU[1]) + 16}><tspan className="mathy">ε</tspan><Sub>∅</Sub> 无条件（s = 0）</text>
+        <SvgTex x={x(EU[0]) + 10} y={y(EU[1]) + 18} w={170} size={12} color="var(--ink-2)"><Tex>{'\\epsilon_\\varnothing'}</Tex> 无条件（<Tex>{'s = 0'}</Tex>）</SvgTex>
         <circle cx={x(EC[0])} cy={y(EC[1])} r={5} fill="var(--c-cond)" stroke="var(--card)" strokeWidth={2} />
-        <text x={x(EC[0]) + 10} y={y(EC[1]) + 14}><tspan className="mathy">ε</tspan><Sub>y</Sub> 有条件（s = 1）</text>
+        <SvgTex x={x(EC[0]) + 10} y={y(EC[1]) + 16} w={170} size={12} color="var(--ink-2)"><Tex>{'\\epsilon_y'}</Tex> 有条件（<Tex>{'s = 1'}</Tex>）</SvgTex>
         <circle cx={x(eh[0])} cy={y(eh[1])} r={6} fill="var(--c-guided)" stroke="var(--card)" strokeWidth={2} />
         <SvgTex x={x(eh[0]) - 10} y={y(eh[1]) - 8} w={130} align="end" color="var(--ink)"><Tex>{`\\hat\\epsilon\\;(s = ${s.toFixed(1)})`}</Tex></SvgTex>
       </svg>
@@ -55,7 +55,7 @@ export function ExtrapolationDemo() {
         <span><i className="bg-cond" />有条件预测 <Tex>{'\\epsilon_y'}</Tex></span>
         <span><i className="bg-guided" />CFG 结果 <Tex>{'\\hat\\epsilon'}</Tex></span>
       </div>
-      <Slider label="guidance s" value={s} min={0} max={5} step={0.1} onChange={setS} format={(v) => v.toFixed(1)} />
+      <Slider label="guidance $s$" value={s} min={0} max={5} step={0.1} onChange={setS} format={(v) => v.toFixed(1)} />
       <div className="kb-demo-readout">
         <span><b>{zone}</b></span>
         <Tex>{`\\hat\\epsilon = (1-s)\\,\\epsilon_\\varnothing + s\\,\\epsilon_y = (${(1 - s).toFixed(1)})\\,\\epsilon_\\varnothing + ${s.toFixed(1)}\\,\\epsilon_y`}</Tex>

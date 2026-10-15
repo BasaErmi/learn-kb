@@ -1,83 +1,138 @@
-import { useId, useMemo, useState } from 'react'
-import { scaleLinear } from 'd3-scale'
-import { area } from 'd3-shape'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { Demo } from '@/kb/components/Demo'
 import { Slider } from '@/kb/components/Slider'
-import { mixtureLogDensity, mixturePosterior, mixtureScore } from '../lib/mixture1d'
+import { Tex } from '@/kb/components/Tex'
+import { magnetEps, magnetLogDensity, magnetPosterior, magnetPull, magnetScore, type Pt } from '../lib/magnet2d'
+import { alphaBar } from '../lib/schedule'
 
-type P = [number, number]
-const CENTERS = [1, -1]
-const W = 560, H = 250, M = { l: 16, r: 16 }
-const XS = Array.from({ length: 201 }, (_, i) => -4 + (i * 8) / 200)
-const ROLE = ['cond', 'uncond', 'guided'] as const
+// 7 个数据点，分三簇：左上 A–C、右上 D–E、下方 F–G
+const PTS: Pt[] = [[-1.8, 1.2], [-1.2, 1.7], [-1.5, 0.5], [1.3, 1.4], [2.0, 0.6], [0.7, -1.6], [-0.3, -1.9]]
+const NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+
+const XT0: Pt = [0.6, 0.3], T0 = 0.45
+const R = 3, RES = 120
+const PAPER = [255, 253, 248], INK = [185, 177, 162]
+const sx = (v: number) => ((v + R) / (2 * R)) * 100
+const sy = (v: number) => 100 - ((v + R) / (2 * R)) * 100
+const clamp = (v: number) => Math.max(-R, Math.min(R, v))
+const vec = (p: Pt, d = 2) => `(${p[0].toFixed(d)}, ${p[1].toFixed(d)})`
 
 export function MagnetDemo() {
-  const [xt, setXt] = useState(1.5)
-  const [sigma, setSigma] = useState(1)
+  const [xt, setXt] = useState<Pt>(XT0)
+  const [t, setT] = useState(T0)
+  const ab = alphaBar(t), r = Math.sqrt(ab)
   const uid = useId().replace(/:/g, '')
-  const post = mixturePosterior(xt, CENTERS, sigma)
-  const pulls = CENTERS.map((c) => -(xt - c) / sigma ** 2)
-  const eps = CENTERS.map((c) => (xt - c) / sigma)
-  const score = mixtureScore(xt, CENTERS, sigma)
-  const epsBar = post[0] * eps[0] + post[1] * eps[1]
+  const canvas = useRef<HTMLCanvasElement>(null)
 
-  const x = scaleLinear().domain([-4, 4]).range([M.l, W - M.r]).clamp(true)
-  const dens = useMemo(() => XS.map((v) => Math.exp(mixtureLogDensity(v, CENTERS, sigma))), [sigma])
-  const y = scaleLinear().domain([0, Math.max(...dens) * 1.1]).range([110, 14])
-  const densPath = area<P>().x((d) => x(d[0])).y0(110).y1((d) => y(d[1]))(XS.map((v, i) => [v, dens[i]] as P)) ?? ''
-  // 箭头长度：每单位 score 画 0.5 个数据单位
-  const tip = (d: number) => x(xt + d * 0.5)
+  // 底色：加噪后的混合密度 pₜ，t 越大越“抹开”、越往原点收缩
+  useEffect(() => {
+    const ctx = canvas.current?.getContext('2d')
+    if (!ctx) return
+    const img = ctx.createImageData(RES, RES)
+    const vals: number[] = []
+    for (let j = 0; j < RES; j++) for (let i = 0; i < RES; i++)
+      vals.push(Math.exp(magnetLogDensity([-R + (2 * R * (i + 0.5)) / RES, R - (2 * R * (j + 0.5)) / RES], PTS, ab)))
+    const max = Math.max(...vals)
+    vals.forEach((v, k) => {
+      const a = Math.pow(v / max, 0.7) * 0.8
+      for (let c = 0; c < 3; c++) img.data[k * 4 + c] = PAPER[c] + (INK[c] - PAPER[c]) * a
+      img.data[k * 4 + 3] = 255
+    })
+    ctx.putImageData(img, 0, 0)
+  }, [ab])
 
-  const rows = [
-    { label: 'x₀ = +1 的拉力', d: pulls[0], y: 152, op: 0.25 + 0.75 * post[0] },
-    { label: 'x₀ = −1 的拉力', d: pulls[1], y: 180, op: 0.25 + 0.75 * post[1] },
-    { label: '加权平均 = score', d: score, y: 216, op: 1 },
-  ]
+  const w = magnetPosterior(xt, PTS, ab)
+  const pulls = PTS.map((p) => magnetPull(xt, p, ab))
+  const eps = PTS.map((p) => magnetEps(xt, p, ab))
+  const score = magnetScore(xt, PTS, ab)
+  const epsBar = eps.reduce<Pt>((a, e, i) => [a[0] + w[i] * e[0], a[1] + w[i] * e[1]], [0, 0])
+  // 加噪后每个来源的中心是 √ᾱₜ·x₀，磁铁画在这里
+  const centers = PTS.map(([a, b]): Pt => [r * a, r * b])
+  // 箭头统一乘 (1−ᾱₜ)：拉力正好指到 √ᾱₜ·x₀，score 正好指到它们的加权重心 √ᾱₜ·E[x₀|xₜ]
+  const mean: Pt = [xt[0] + (1 - ab) * score[0], xt[1] + (1 - ab) * score[1]]
+
+  const place = (e: PointerEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    setXt([clamp(-R + (2 * R * (e.clientX - r.left)) / r.width), clamp(R - (2 * R * (e.clientY - r.top)) / r.height)])
+  }
+  const onKey = (e: KeyboardEvent) => {
+    const d: Record<string, Pt> = { ArrowLeft: [-0.1, 0], ArrowRight: [0.1, 0], ArrowUp: [0, 0.1], ArrowDown: [0, -0.1] }
+    if (!d[e.key]) return
+    e.preventDefault()
+    setXt(([a, b]) => [clamp(a + d[e.key][0]), clamp(b + d[e.key][1])])
+  }
 
   return (
     <Demo
       title="score 是所有来源“拉力”的加权平均"
-      hint="数据只有 ±1 两个点，xₜ = x₀ + σ·ε。拖动 xₜ 和噪声 σ：离 xₜ 越近的来源后验权重越大，最终 score 由它主导。"
-      onReset={() => { setXt(1.5); setSigma(1) }}
+      hint="7 个数据点 A–G（空心圈），$x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$，所以每个来源加噪后的中心是 $\sqrt{\bar\alpha_t}\,x_0$（实心点）。在图上拖动 $x_t$、调节噪声水平 $t$：线越粗的来源后验权重越大。所有箭头都乘了 $1-\bar\alpha_t$，于是每条拉力正好指到对应的实心点，橙色的 score 箭头正好指到它们的加权重心。"
+      onReset={() => { setXt(XT0); setT(T0) }}
     >
-      <svg viewBox={`0 0 ${W} ${H}`} className="kb-chart" role="img" aria-label="磁铁示意">
-        <defs>
-          {ROLE.map((k) => (
-            <marker key={k} id={`${uid}-${k}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill={`var(--c-${k})`} />
-            </marker>
-          ))}
-        </defs>
-        <path d={densPath} className="fill-data" />
-        <line className="axis" x1={M.l} x2={W - M.r} y1={110} y2={110} />
-        <text x={M.l} y={14}>pₜ(x)：两个点被噪声“抹开”后的混合密度</text>
-        {CENTERS.map((c, i) => (
-          <g key={c}>
-            <circle cx={x(c)} cy={110} r={5 + 10 * Math.sqrt(post[i])} fill={`var(--c-${ROLE[i]})`} opacity={0.85} stroke="var(--card)" strokeWidth={2} />
-            <text x={x(c)} y={136} textAnchor="middle">x₀ = {c > 0 ? '+1' : '−1'} · 权重 {(post[i] * 100).toFixed(1)}%</text>
-          </g>
-        ))}
-        <line x1={x(xt)} x2={x(xt)} y1={30} y2={232} stroke="var(--ink)" strokeDasharray="2 3" />
-        <text x={x(xt) + 5} y={42} style={{ fill: 'var(--ink)' }}>xₜ = {xt.toFixed(2)}</text>
-        {rows.map((r, i) => (
-          <g key={r.label} opacity={r.op}>
-            <line x1={x(xt)} x2={tip(r.d)} y1={r.y} y2={r.y} className={`stroke-${ROLE[i]}`} markerEnd={`url(#${uid}-${ROLE[i]})`} />
-            <text x={W - M.r} y={r.y + 4} textAnchor="end">{r.label} {r.d.toFixed(3)}</text>
-          </g>
-        ))}
-      </svg>
-      <Slider label="xₜ" value={xt} min={-3.5} max={3.5} step={0.05} onChange={setXt} />
-      <Slider label="噪声 σ" value={sigma} min={0.3} max={2} step={0.05} onChange={setSigma} />
-      <table className="kb-num-table">
-        <thead><tr><th>来源 x₀</th><th>后验权重</th><th>拉力 −(xₜ−x₀)/σ²</th><th>对应噪声 ε</th></tr></thead>
+      <div className="kb-demo-grid">
+        <div className="kb-canvas-wrap">
+          <canvas ref={canvas} width={RES} height={RES} />
+          <svg
+            viewBox="0 0 100 100"
+            className="kb-magnet"
+            role="img"
+            aria-label="二维磁铁示意：拖动 xₜ"
+            onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); place(e) }}
+            onPointerMove={(e) => { if (e.buttons) place(e) }}
+          >
+            <defs>
+              <marker id={`${uid}-g`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--c-guided)" />
+              </marker>
+            </defs>
+            {PTS.map((p, i) => (
+              <circle key={i} cx={sx(p[0])} cy={sy(p[1])} r={1.1} fill="none" stroke="var(--ink-3)" strokeWidth={0.35} opacity={0.7} />
+            ))}
+            {centers.map((p, i) => (
+              <line key={i} x1={sx(xt[0])} y1={sy(xt[1])} x2={sx(p[0])} y2={sy(p[1])}
+                stroke="var(--c-cond)" strokeWidth={0.25 + 1.6 * w[i]} opacity={0.15 + 0.85 * w[i]} strokeLinecap="round" />
+            ))}
+            {centers.map((p, i) => (
+              <g key={i}>
+                <circle cx={sx(p[0])} cy={sy(p[1])} r={1.3 + 3.2 * Math.sqrt(w[i])} fill="var(--c-cond)" opacity={0.35 + 0.65 * Math.sqrt(w[i])} stroke="var(--card)" strokeWidth={0.5} />
+                <text x={sx(p[0])} y={sy(p[1]) - 2.6 - 3.2 * Math.sqrt(w[i])} textAnchor="middle" className="kb-magnet-label">
+                  {NAMES[i]}{w[i] >= 0.03 ? ` ${(w[i] * 100).toFixed(0)}%` : ''}
+                </text>
+              </g>
+            ))}
+            <line x1={sx(xt[0])} y1={sy(xt[1])} x2={sx(mean[0])} y2={sy(mean[1])}
+              stroke="var(--c-guided)" strokeWidth={1.1} markerEnd={`url(#${uid}-g)`} strokeLinecap="round" />
+            <circle cx={sx(mean[0])} cy={sy(mean[1])} r={1.4} fill="none" stroke="var(--c-guided)" strokeWidth={0.6} />
+            <circle cx={sx(xt[0])} cy={sy(xt[1])} r={2.2} className="kb-magnet-handle" tabIndex={0}
+              role="button" aria-label={`xₜ 位置 ${vec(xt)}，用方向键移动`} onKeyDown={onKey} />
+            <text x={sx(xt[0]) + 3} y={sy(xt[1]) + 5.5} className="kb-magnet-label is-math">x<tspan dy={1} fontSize={2.6}>t</tspan></text>
+          </svg>
+        </div>
+        <div className="kb-magnet-side">
+          <p className="kb-demo-note">
+            <Tex>x_t</Tex> = <b>{vec(xt)}</b>，<Tex>{'\\bar\\alpha_t'}</Tex> = <b>{ab.toFixed(3)}</b>
+          </p>
+          <p className="kb-demo-note">
+            <span className="kb-swatch" style={{ background: 'var(--c-cond)' }} />各来源的拉力 × <Tex>{'(1-\\bar\\alpha_t)'}</Tex>：从 <Tex>x_t</Tex> 指向 <Tex>{'\\sqrt{\\bar\\alpha_t}\\,x_0'}</Tex>
+          </p>
+          <p className="kb-demo-note">
+            <span className="kb-swatch" style={{ background: 'var(--c-guided)' }} />score × <Tex>{'(1-\\bar\\alpha_t)'}</Tex>：指向加权重心 <Tex>{'\\sqrt{\\bar\\alpha_t}\\,\\mathbb{E}[x_0 \\mid x_t]'}</Tex> = {vec(mean)}
+          </p>
+          <p className="kb-demo-note"><Tex>t</Tex> 小：几乎只剩最近的来源；<Tex>t</Tex> 大：各中心向原点收缩、权重趋于平均，score 指向整体重心。</p>
+        </div>
+      </div>
+      <Slider label="噪声水平 $t$" value={t} min={0.05} max={0.95} step={0.01} onChange={setT} />
+      <div className="kb-table-scroll">
+      <table className="kb-num-table kb-nowrap">
+        <thead><tr><th>来源</th><th>后验 <Tex>{'q(x_0 \\mid x_t)'}</Tex></th><th>噪声 <Tex>{'\\epsilon = \\dfrac{x_t - \\sqrt{\\bar\\alpha_t}\\,x_0}{\\sqrt{1-\\bar\\alpha_t}}'}</Tex></th><th>拉力 <Tex>{'\\nabla_{x_t} \\log q(x_t \\mid x_0) = -\\dfrac{\\epsilon}{\\sqrt{1-\\bar\\alpha_t}}'}</Tex></th></tr></thead>
         <tbody>
-          {CENTERS.map((c, i) => (
-            <tr key={c}><td>{c > 0 ? '+1' : '−1'}</td><td>{(post[i] * 100).toFixed(1)}%</td><td>{pulls[i].toFixed(3)}</td><td>{eps[i].toFixed(3)}</td></tr>
+          {PTS.map((p, i) => (
+            <tr key={i}><td>{NAMES[i]}</td><td>{(w[i] * 100).toFixed(1)}%</td><td>{vec(eps[i])}</td><td>{vec(pulls[i])}</td></tr>
           ))}
-          <tr className="is-total"><td>加权平均</td><td>—</td><td>score = {score.toFixed(3)}</td><td>E[ε|xₜ] = {epsBar.toFixed(3)}</td></tr>
+          <tr className="is-total"><td>加权平均</td><td>100%</td><td><Tex>{'\\mathbb{E}[\\epsilon \\mid x_t]'}</Tex><br />{vec(epsBar, 3)}</td><td><Tex>{'\\nabla_{x_t} \\log p_t(x_t)'}</Tex><br />{vec(score, 3)}</td></tr>
         </tbody>
       </table>
-      <p className="kb-demo-note">检验“词典”：−E[ε|xₜ] / σ = {(-epsBar / sigma).toFixed(3)}，和 score 一致。</p>
+      </div>
+      <p className="kb-demo-note">检验事实 2：<Tex>{'-\\mathbb{E}[\\epsilon \\mid x_t] / \\sqrt{1-\\bar\\alpha_t}'}</Tex> = {vec([-epsBar[0] / Math.sqrt(1 - ab), -epsBar[1] / Math.sqrt(1 - ab)], 3)}，和 score 一致。</p>
     </Demo>
   )
 }

@@ -4,6 +4,7 @@ import { Slider } from '@/kb/components/Slider'
 import { sampleCFG, sampleStats } from '../lib/cfg'
 import { classComps, sampleData, type Comp2D, type Vec2 } from '../lib/gmm2d'
 import { mulberry32 } from '../lib/prng'
+import { Tex } from '@/kb/components/Tex'
 
 const mk = (label: number, pts: Vec2[]): Comp2D[] => pts.map((mean) => ({ mean, std: 0.28, weight: 1 / 9, label }))
 const COMPS: Comp2D[] = [
@@ -67,7 +68,7 @@ export function GuidedSamplingDemo() {
   return (
     <Demo
       title="在二维数据上真实地跑一遍 CFG 采样"
-      hint="三类数据，每类由三个小簇组成（浅色点）。用真实的 CFG 公式 + DDIM 采样 500 个点（橙色）。拖动 s：先变得更集中、更“典型”，再往后多样性丢失，样本冲出数据范围。"
+      hint="三类数据，每类由三个小簇组成（浅色点）。用真实的 CFG 公式 + DDIM 采样 500 个点（橙色）。拖动 $s$：先变得更集中、更“典型”，再往后多样性丢失，样本冲出数据范围。"
       onReset={() => { setLabel(0); setS(1); setShowPaths(false) }}
     >
       <div className="kb-demo-grid">
@@ -79,15 +80,15 @@ export function GuidedSamplingDemo() {
               <button key={c} type="button" className="kb-chip" aria-pressed={label === i} onClick={() => setLabel(i)}>类 {c}</button>
             ))}
           </div>
-          <span>类内散度：<b>{stats.spread.toFixed(2)}</b>（s = 1 时 {base.spread.toFixed(2)}）</span>
+          <span>类内散度：<b>{stats.spread.toFixed(2)}</b>（<Tex>{'s = 1'}</Tex> 时 {base.spread.toFixed(2)}）</span>
           <span>冲出数据范围：<b>{(outside * 100).toFixed(1)}%</b></span>
           <label><input type="checkbox" checked={showPaths} onChange={(e) => setShowPaths(e.target.checked)} /> 显示 24 条采样轨迹</label>
         </div>
       </div>
-      <Slider label="guidance s" value={s} min={0} max={12} step={0.5} onChange={setS} format={(v) => v.toFixed(1)} />
+      <Slider label="guidance $s$" value={s} min={0} max={12} step={0.5} onChange={setS} format={(v) => v.toFixed(1)} />
       <div className="kb-presets">
         {PRESETS.map((p) => (
-          <button key={p} type="button" className="kb-chip" aria-pressed={s === p} onClick={() => setS(p)}>s = {p}</button>
+          <button key={p} type="button" className="kb-chip" aria-pressed={s === p} aria-label={`s = ${p}`} onClick={() => setS(p)}><Tex>{`s = ${p}`}</Tex></button>
         ))}
       </div>
       <div className="kb-legend">

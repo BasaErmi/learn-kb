@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 export function Step({ id, n, title, gist, children }: { id: string; n: number; title: string; gist: string; children: ReactNode }) {
   return (
-    <section id={id} className="kb-step">
+    <section id={id} className="kb-step" style={{ counterReset: `kb-step ${n} kb-sec` }}>
       <header className="kb-step-head">
         <span className="kb-step-num" aria-hidden>{String(n).padStart(2, '0')}</span>
         <div>

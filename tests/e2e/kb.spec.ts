@@ -51,13 +51,23 @@ test('sharpen demo reproduces the table and survives extremes', async ({ page })
   expect(errors).toEqual([])
 })
 
+test('sharpen demo keeps the s = 1 reference curve fixed', async ({ page }) => {
+  await page.goto('./#/t/cfg')
+  const demo = page.getByRole('region', { name: /锐化/ })
+  const ref = demo.locator('path.stroke-ref')
+  const before = await ref.getAttribute('d')
+  await demo.getByRole('button', { name: 's = 8', exact: true }).click()
+  await expect(demo.getByRole('slider')).toHaveValue('8')
+  expect(await ref.getAttribute('d')).toBe(before)
+})
+
 test('sliders at extremes produce no NaN anywhere', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./#/t/cfg')
   await expect(page.locator('#step-7')).toBeAttached()
   const sliders = page.getByRole('slider')
   const n = await sliders.count()
-  expect(n).toBeGreaterThanOrEqual(8)
+  expect(n).toBeGreaterThanOrEqual(7)
   for (let i = 0; i < n; i++) {
     const s = sliders.nth(i)
     for (const v of [await s.getAttribute('min'), await s.getAttribute('max')]) await s.fill(v!)
@@ -70,9 +80,42 @@ test('sliders at extremes produce no NaN anywhere', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
-test('magnet demo shows −0.595 by default', async ({ page }) => {
+test('2D magnet demo: default numbers, drag and keyboard move x_t', async ({ page }) => {
   await page.goto('./#/t/cfg')
-  await expect(page.getByRole('region', { name: /拉力/ }).getByText('score = -0.595')).toBeVisible()
+  const demo = page.getByRole('region', { name: /拉力/ })
+  await expect(demo.locator('tr.is-total')).toContainText('(0.953, 0.704)')
+  const handle = demo.getByRole('button', { name: /xₜ 位置/ })
+  await handle.focus()
+  await page.keyboard.press('ArrowLeft')
+  await expect(handle).toHaveAttribute('aria-label', /\(0\.50, 0\.30\)/)
+  const box = (await demo.locator('svg.kb-magnet').boundingBox())!
+  await page.mouse.click(box.x + box.width * 0.2, box.y + box.height * 0.25) // 左上簇附近
+  await expect(demo.locator('tbody tr').first().locator('td').nth(1)).not.toHaveText(/^0\./)
+  await expect(demo).not.toContainText('NaN')
+})
+
+test('cross-reference jumps to the target and the back button returns', async ({ page }) => {
+  await page.goto('./#/t/cfg')
+  const ref = page.locator('#step-4').getByRole('button', { name: '第 3 步的贝叶斯公式' })
+  await ref.scrollIntoViewIfNeeded()
+  const before = await page.evaluate(() => scrollY)
+  await ref.click()
+  await expect(page.locator('#cg-bayes')).toBeInViewport()
+  const back = page.getByRole('button', { name: /回到刚才读的位置/ })
+  await expect(back).toBeVisible()
+  await back.click()
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(before - 5)
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeLessThan(before + 5)
+  await expect(back).toHaveCount(0)
+})
+
+test('cross-reference opens a collapsed explanation in review mode', async ({ page }) => {
+  await page.goto('./#/t/cfg')
+  await page.getByRole('button', { name: '复习', exact: true }).click()
+  await expect(page.locator('#fact-2')).toBeHidden()
+  // Pitfall 在复习模式下可见，它引用的“事实 2”在折叠的讲解块里
+  await page.locator('#step-2').getByRole('button', { name: '事实 2' }).click()
+  await expect(page.locator('#fact-2 + p')).toBeInViewport()
 })
 
 test('review mode persists and hides demos', async ({ page }) => {
@@ -94,6 +137,22 @@ test('flashcard mastered persists', async ({ page }) => {
   await card.getByLabel('已掌握').check()
   await page.reload()
   await expect(page.locator('[data-card="s-values"]').getByLabel('已掌握')).toBeChecked()
+})
+
+test('toc read progress resets on each visit', async ({ page }) => {
+  await page.goto('./#/t/cfg')
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await expect(page.locator('.kb-toc-progress')).not.toContainText('已读 0 /')
+  await page.reload()
+  await expect(page.locator('.kb-toc-progress')).toContainText('已读 1 /')
+})
+
+test('home shows mastered flashcard count', async ({ page }) => {
+  await page.goto('./#/')
+  await expect(page.locator('.kb-card-meta')).not.toContainText('已掌握')
+  await page.evaluate(() => localStorage.setItem('kb:cfg:mastered', JSON.stringify(['a', 'b'])))
+  await page.reload()
+  await expect(page.locator('.kb-card-meta')).toContainText('已掌握 2 张闪卡')
 })
 
 test('corrupted localStorage does not break the page', async ({ page }) => {

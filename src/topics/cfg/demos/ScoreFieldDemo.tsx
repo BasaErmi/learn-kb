@@ -3,6 +3,7 @@ import { Demo } from '@/kb/components/Demo'
 import { Slider } from '@/kb/components/Slider'
 import { noisedLogDensity, noisedScore, type Comp2D, type Vec2 } from '../lib/gmm2d'
 import { alphaBar } from '../lib/schedule'
+import { Tex } from '@/kb/components/Tex'
 
 const COMPS: Comp2D[] = [
   { mean: [-1.6, 0.9], std: 0.35, weight: 0.4, label: 0 },
@@ -52,7 +53,7 @@ export function ScoreFieldDemo() {
   return (
     <Demo
       title="score 向量场：每一点都指向密度更高的方向"
-      hint="底色是加噪后的密度 pₜ，箭头是 score 的方向（长度按大小取对数）。t 越大分布被抹得越开，箭头越一致地指向中心，所以从纯噪声出发也有可靠的方向。"
+      hint="底色是加噪后的密度 $p_t$，箭头是 score 的方向（长度按大小取对数）。$t$ 越大分布被抹得越开，箭头越一致地指向中心，所以从纯噪声出发也有可靠的方向。"
       onReset={() => setT(0.3)}
     >
       <div className="kb-canvas-wrap">
@@ -70,8 +71,8 @@ export function ScoreFieldDemo() {
           })}
         </svg>
       </div>
-      <Slider label="噪声水平 t" value={t} min={0} max={1} step={0.01} onChange={setT} />
-      <div className="kb-demo-readout"><span>ᾱₜ = <b>{ab.toFixed(3)}</b></span><span>t → 0：三个清晰的峰</span><span>t → 1：近似标准高斯</span></div>
+      <Slider label="噪声水平 $t$" value={t} min={0} max={1} step={0.01} onChange={setT} />
+      <div className="kb-demo-readout"><span><Tex>{'\\bar\\alpha_t'}</Tex> = <b>{ab.toFixed(3)}</b></span><span><Tex>{'t \\to 0'}</Tex>：三个清晰的峰</span><span><Tex>{'t \\to 1'}</Tex>：近似标准高斯</span></div>
     </Demo>
   )
 }

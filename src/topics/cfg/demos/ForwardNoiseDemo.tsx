@@ -3,6 +3,7 @@ import { Demo } from '@/kb/components/Demo'
 import { Slider } from '@/kb/components/Slider'
 import { alphaBar } from '../lib/schedule'
 import { forwardNoise, gaussianField, toRGBA, toSigned } from '../lib/forwardNoise'
+import { Tex } from '@/kb/components/Tex'
 
 const SRC = 'images/cfg/samoyed.jpg'
 const SIZE = 192
@@ -44,8 +45,9 @@ export function ForwardNoiseDemo() {
 
   return (
     <Demo
-      title="前向加噪：xₜ = √ᾱₜ · x₀ + √(1−ᾱₜ) · ε"
-      hint="在浏览器里对一张真实照片逐像素计算。t 接近 1 时图像信息几乎消失，xₜ 近似就是噪声 ε 本身。"
+      label="前向加噪：xₜ = √ᾱₜ·x₀ + √(1−ᾱₜ)·ε"
+      title="前向加噪：$x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$"
+      hint="在浏览器里对一张真实照片逐像素计算。$t$ 接近 1 时图像信息几乎消失，$x_t$ 近似就是噪声 $\epsilon$ 本身。"
       onReset={() => { setT(0.35); setSeed(7) }}
     >
       {error ? (
@@ -55,18 +57,18 @@ export function ForwardNoiseDemo() {
           <div className="kb-demo-grid">
             <canvas ref={main} width={SIZE} height={SIZE} style={{ width: '100%', borderRadius: 4, border: '1px solid var(--rule)' }} aria-label="加噪后的图像" />
             <div className="kb-demo-readout" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-              <span>ᾱₜ = <b>{ab.toFixed(3)}</b></span>
-              <span>信号系数 √ᾱₜ = <b>{Math.sqrt(ab).toFixed(3)}</b></span>
-              <span>噪声系数 √(1−ᾱₜ) = <b>{Math.sqrt(1 - ab).toFixed(3)}</b></span>
-              <button type="button" className="kb-btn-ghost" onClick={() => setSeed(seed + 1)}>换一组噪声 ε</button>
+              <span><Tex>{'\\bar\\alpha_t'}</Tex> = <b>{ab.toFixed(3)}</b></span>
+              <span>信号系数 <Tex>{'\\sqrt{\\bar\\alpha_t}'}</Tex> = <b>{Math.sqrt(ab).toFixed(3)}</b></span>
+              <span>噪声系数 <Tex>{'\\sqrt{1-\\bar\\alpha_t}'}</Tex> = <b>{Math.sqrt(1 - ab).toFixed(3)}</b></span>
+              <button type="button" className="kb-btn-ghost" onClick={() => setSeed(seed + 1)}>换一组噪声 <Tex>{'\\epsilon'}</Tex></button>
             </div>
           </div>
-          <Slider label="噪声水平 t" value={t} min={0} max={1} step={0.01} onChange={setT} />
+          <Slider label="噪声水平 $t$" value={t} min={0} max={1} step={0.01} onChange={setT} />
           <div className="kb-thumbs">
             {THUMBS.map((tt, i) => (
               <figure key={tt}>
                 <canvas ref={(el) => { thumbs.current[i] = el }} width={SIZE} height={SIZE} />
-                t = {tt}
+                <Tex>{`t = ${tt}`}</Tex>
               </figure>
             ))}
           </div>

@@ -70,3 +70,21 @@
 .kb-badge { display: inline-block; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.1em; padding: 0.05rem 0.45rem; border-radius: 3px; background: var(--warn-soft); color: var(--warn); margin-right: 0.35rem; }
 .kb-tex-block { display: block; overflow-x: auto; }
 .kb-chart .mathy { font-family: "Times New Roman", "STIX Two Text", serif; font-style: italic; font-size: 14px; }
+
+/* 二维磁铁演示 */
+.kb-magnet { touch-action: none; cursor: crosshair; }
+.kb-magnet .kb-magnet-label { font-size: 3.2px; fill: var(--ink-2); font-family: var(--sans); pointer-events: none; }
+.kb-magnet-handle { fill: var(--ink); stroke: var(--card); stroke-width: 0.8; cursor: grab; outline: none; }
+.kb-magnet-handle:focus-visible { stroke: var(--c-guided); stroke-width: 1.2; }
+.kb-magnet-side { display: flex; flex-direction: column; gap: 0.6rem; font-size: 0.85rem; }
+.kb-swatch { display: inline-block; width: 0.8rem; height: 0.25rem; border-radius: 2px; margin-right: 0.4rem; vertical-align: middle; }
+.kb-table-scroll { overflow-x: auto; }
+.kb-magnet .kb-magnet-label.is-math { font-family: "KaTeX_Math", "Times New Roman", serif; font-style: italic; font-size: 4.4px; fill: var(--ink); }
+.kb-nowrap th, .kb-nowrap td { white-space: nowrap; }
+.kb-magnet-side p { margin: 0; }
+.kb-flow-code i { font-style: normal; }
+.kb-flow-code .tok-kw { color: #d73a49; }
+.kb-flow-code .tok-fn { color: #6f42c1; }
+.kb-flow-code .tok-str { color: #032f62; }
+.kb-flow-code .tok-num { color: #005cc5; }
+.kb-flow-code .tok-com { color: #6a737d; }

@@ -1,6 +1,8 @@
 import { scaleLinear } from 'd3-scale'
 import { line } from 'd3-shape'
 import { useReviewMode } from '@/kb/state/ReviewMode'
+import { Tex } from '@/kb/components/Tex'
+import { SvgTex } from '@/kb/components/SvgSub'
 
 type P = [number, number]
 const S = Array.from({ length: 91 }, (_, i) => 1 + i * 0.1)
@@ -27,8 +29,8 @@ function Panel({ title, series }: { title: string; series: { name: string; f: (s
           <path d={line<P>().x((p) => x(p[0])).y((p) => y(p[1]))(S.map((s) => [s, sr.f(s)] as P)) ?? ''} className={sr.cls} />
         </g>
       ))}
-      <text x={M.l} y={H - 8}>s = 1</text>
-      <text x={W - M.r} y={H - 8} textAnchor="end">s 增大 →</text>
+      <SvgTex x={M.l} y={H - 6} w={60} size={12} color="var(--ink-3)"><Tex>{'s = 1'}</Tex></SvgTex>
+      <SvgTex x={W - M.r} y={H - 6} w={90} align="end" size={12} color="var(--ink-3)"><Tex>s</Tex> 增大 →</SvgTex>
     </svg>
     <div className="kb-legend">
       {series.map((sr) => <span key={sr.name}><i className={SWATCH[sr.cls]} />{sr.name}</span>)}
@@ -46,7 +48,7 @@ export function MetricsChart() {
         <Panel title="IS 与 FID" series={[{ name: 'IS（越高越好）', f: IS, cls: 'stroke-cond' }, { name: 'FID（越低越好）', f: FID, cls: 'stroke-guided' }]} />
         <Panel title="Precision 与 Recall" series={[{ name: 'Precision', f: PREC, cls: 'stroke-cond' }, { name: 'Recall', f: REC, cls: 'stroke-uncond' }]} />
       </div>
-      <figcaption><span className="kb-badge">示意</span>只表示趋势的形状，不是真实实验数据。IS 随 s 基本单调上升；FID 呈 U 形；precision 上升、recall 下降。</figcaption>
+      <figcaption><span className="kb-badge">示意</span>只表示趋势的形状，不是真实实验数据。IS 随 <Tex>s</Tex> 基本单调上升；FID 呈 U 形；precision 上升、recall 下降。</figcaption>
     </figure>
   )
 }

@@ -48,20 +48,25 @@ Vite 8、React 19、TypeScript 5.9、MDX 3、KaTeX、Shiki、react-router 7（Ha
 
 ## localStorage 键
 - `kb:reviewMode`：是否处于复习模式
-- `kb:<slug>:visited`：已读步骤
+- ~~`kb:<slug>:visited`~~：已停用，目录阅读进度只存在内存（每次访问重新计算）
 - `kb:<slug>:mastered`：已掌握的卡片 id（卡片 id 发布后不要改）
 
 ## 发布流程
 - 源码在私有仓库 personalDocument/learnHtml 中维护；公开仓库 `~/Github/learn-kb` 只是发布副本，不要直接在那里改。
+- `scripts/gen_dit_scale_samples.py`：在 GPU 节点上用 DiT-XL/2-256 生成同种子、不同 guidance scale 的对比图（`public/images/cfg/dit-scale/`）。不进入构建，只为可复现；GPU 使用须遵守 gpu199 上 `project/guanlin/infra/AGENTS.md` 的压测切换规则
 - `scripts/publish.sh` 用 rsync 同步，`scripts/publish-exclude.txt` 排除 `CFG/` 对话记录、node_modules、dist 等。
 - 部署工作流：`.github/workflows/deploy.yml`（只在公开仓库根目录生效）。
 
 ## 注意事项
 - 页内跳转用 `scrollToId()`，不要写 `href="#id"`（会破坏 HashRouter）
+- 讲解（`<Detail>`）里的 `###` 小标题会自动编号为“步号.节号”，只用于主线内容；顺带一提、可以跳过的内容用 `<Aside title="...">`（标题里可以写 `$...$`），它会弱化显示，不参与编号。宽屏（≥ 1380px）下旁注浮到右侧边栏，和它在源码中的位置对齐，所以要把 `<Aside>` 写在相关段落之后；旁注只放短内容（不放展示公式和表格）
+- 正文里的交叉引用：在目标前放 `<Anchor id="..." />`，引用处写 `<Ref to="...">第 3 步的贝叶斯公式</Ref>`（也可以直接用 Step 的 id，如 `step-4`）。跳转前的位置会被记下，右下角出现「回到刚才读的位置」按钮（`src/kb/jump.tsx`）。复习模式下，如果目标在折叠的讲解块里，会自动展开该讲解块
 - `katex` 版本必须与 `rehype-katex` 内置版本一致（目前是 0.16.47）
 - MDX 正文里不要直接写 `<` 和 `{`（公式里可以）；GFM 表格的公式里用 `\mid`，不要用 `|`
 
 ## 如何新增主题
+做新专题时使用项目 skill `learn-topic-page`（`.claude/skills/learn-topic-page/`）：里面有完整流程、页面结构、写作规范、演示规范、交付前自查清单和截图自查模板。下面是最少步骤：
+
 1. 新建 `src/topics/<slug>/meta.ts` 和 `index.mdx`
 2. 在 `registry.ts` 里加一条
 3. 需要交互时在 `demos/` 写组件，计算逻辑放 `lib/` 并配测试

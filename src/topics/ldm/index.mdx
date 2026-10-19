@@ -122,12 +122,6 @@ $$
 
 <CompressionDemo />
 
-### 为什么不压得更狠
-
-LDM 之前已经有两阶段方法，比如 VQ-VAE / VQGAN 加自回归 Transformer。自回归模型把图像当作一维序列，没有空间归纳偏置，只能靠很强的压缩（$f = 16$ 甚至更大）让序列变短。压得太狠，重建质量下降，生成的细节上限也被拉低。
-
-扩散模型的 UNet 有卷积带来的空间归纳偏置，能直接处理二维的 latent，所以 LDM 只需要**温和的压缩**。论文实验中 $f = 4$ 到 $16$ 最好：$f = 1, 2$ 基本还是像素空间，训练很慢；$f = 32$ 训练很快，但很早就进入平台期，因为重建本身丢了太多细节。
-
 | | 像素空间 DM | LDM |
 | --- | --- | --- |
 | 扩散作用对象 | $x \in \mathbb{R}^{H \times W \times 3}$ | $z \in \mathbb{R}^{\frac{H}{f} \times \frac{W}{f} \times c}$ |
@@ -904,11 +898,6 @@ DiT-XL/2 和 DiT-XL/4 的模型参数几乎一样，计算量差多少？为什�
 <Card id="compression-ratio">
 <Front>$f = 8$、$c = 4$ 时压缩率是多少？$256^2$ 图的 latent 和注意力节省多少？</Front>
 <Back>$\frac{3f^2}{c} = 48$；$32 \times 32 \times 4$；token 少 64 倍，注意力矩阵小 4096 倍。</Back>
-</Card>
-
-<Card id="why-mild-f">
-<Front>为什么 LDM 只需要 $f = 4 \sim 16$ 的温和压缩，而 VQGAN + 自回归需要更狠？</Front>
-<Back>自回归把图像当一维序列，没有空间归纳偏置，只能靠压短序列；UNet 有卷积的空间归纳偏置，能直接处理二维 latent。压太狠会锁死重建质量。</Back>
 </Card>
 
 <Card id="ae-loss">

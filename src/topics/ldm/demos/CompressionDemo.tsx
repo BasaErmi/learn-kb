@@ -4,7 +4,6 @@ import { Seg } from '@/kb/components/Seg'
 import { Tex } from '@/kb/components/Tex'
 import { SvgTex } from '@/kb/components/SvgSub'
 import { compression } from '../lib/ldm'
-import { fmt } from '../lib/img'
 
 const FS = [1, 2, 4, 8, 16, 32]
 const CS = [3, 4, 8, 16]
@@ -58,37 +57,24 @@ function Grids({ f, c }: { f: number; c: number }) {
 }
 
 export function CompressionDemo() {
-  const [H, setH] = useState(256)
   const [f, setF] = useState(8)
   const [c, setC] = useState(4)
-  const r = compression(H, f, c)
+  const r = compression(256, f, c)
   return (
     <Demo
       title="第一阶段压缩了多少：调 $f$ 和 $c$"
       label="压缩计算器：调 f 和 c"
-      hint="$f$ 是边长缩小的倍数，$c$ 是 latent 的通道数。蓝框是一个 latent 位置覆盖的像素范围。"
-      onReset={() => { setH(256); setF(8); setC(4) }}
-      note="注意力的节省按“每个空间位置一个 token”计算：token 数缩小 $f^2$ 倍，注意力矩阵缩小 $f^4$ 倍。"
+      hint="$f$ 是边长缩小的倍数，$c$ 是 latent 的通道数。左边是图像里 32×32 的一块，蓝框是一个 latent 位置覆盖的像素范围；右边是这块区域对应的 latent。"
+      onReset={() => { setF(8); setC(4) }}
     >
-      <div className="kb-controls">
-        <Seg label="输入分辨率" value={H} onChange={setH} options={[256, 512].map((v) => ({ value: v, label: `${v}×${v}` }))} />
+      <div className="kb-controls kb-controls-row">
         <Seg label="下采样倍率 f" value={f} onChange={setF} options={FS.map((v) => ({ value: v, label: <Tex>{`f = ${v}`}</Tex>, aria: `f = ${v}` }))} />
         <Seg label="通道数 c" value={c} onChange={setC} options={CS.map((v) => ({ value: v, label: <Tex>{`c = ${v}`}</Tex>, aria: `c = ${v}` }))} />
       </div>
       <Grids f={f} c={c} />
-      <table className="kb-num-table">
-        <thead><tr><th>量</th><th>像素空间</th><th>latent 空间</th><th>倍数</th></tr></thead>
-        <tbody>
-          <tr><td>形状</td><td>{H}×{H}×3</td><td>{r.h}×{r.h}×{c}</td><td>边长 ÷{f}</td></tr>
-          <tr><td>维度</td><td>{fmt(r.pixel)}</td><td>{fmt(r.latent)}</td><td><b>{r.ratio >= 10 ? r.ratio.toFixed(0) : r.ratio.toFixed(2)}×</b></td></tr>
-          <tr><td>空间位置数</td><td>{fmt(H * H)}</td><td>{fmt(r.tokens)}</td><td>{fmt(f * f)}×</td></tr>
-          <tr><td>注意力矩阵元素</td><td>{(H ** 4).toExponential(1)}</td><td>{(r.tokens ** 2).toExponential(1)}</td><td>{fmt(r.attnSaving)}×</td></tr>
-          <tr className="is-total"><td>下采样次数</td><td colSpan={3}><Tex>{`\\log_2 f = ${r.downsamples}`}</Tex></td></tr>
-        </tbody>
-      </table>
       <p className="kb-demo-readout">
+        <span>下采样次数 <Tex>{`\\log_2 f = ${r.downsamples}`}</Tex></span>
         <span>压缩率 <Tex>{'\\frac{3f^2}{c}'}</Tex> = <b>{r.ratio >= 10 ? r.ratio.toFixed(0) : r.ratio.toFixed(2)}</b></span>
-        <span>{f <= 2 ? '几乎还是像素空间，扩散模型很慢' : f >= 32 ? '压得太狠，重建丢细节，质量上限被锁死' : <>论文中质量与效率的平衡区（<Tex>{'f = 4 \sim 16'}</Tex>）</>}</span>
       </p>
     </Demo>
   )

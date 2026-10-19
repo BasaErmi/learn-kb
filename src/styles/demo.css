@@ -112,3 +112,7 @@
 .kb-svg-scroll { overflow-x: auto; }
 @media (max-width: 600px) { .kb-svg-scroll > svg { min-width: 560px; } }
 .kb-num-table.kb-label-col td:first-child { font-family: var(--sans); }
+/* 两组分段按钮并排；窄屏再换行 */
+.kb-controls-row { flex-wrap: nowrap; }
+@media (max-width: 760px) { .kb-controls-row { flex-wrap: wrap; } }
+@media (max-width: 600px) { .kb-segctl button { padding: 0.3rem 0.5rem; } }

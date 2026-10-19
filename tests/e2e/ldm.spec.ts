@@ -23,13 +23,16 @@ test('LDM page renders all math and demos without errors', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
-test('compression demo: f = 8, c = 4 gives 48x and updates with c', async ({ page }) => {
+test('compression demo: f = 8, c = 4 gives 48x and updates with f and c', async ({ page }) => {
   await page.goto('./#/t/ldm')
   const demo = page.getByRole('region', { name: /压缩计算器/ })
-  await expect(demo.locator('tbody tr').nth(1)).toContainText('48×')
+  const out = demo.locator('.kb-demo-readout')
+  await expect(out).toContainText('48')
   await demo.getByRole('button', { name: 'c = 16' }).click()
-  await expect(demo.locator('tbody tr').nth(1)).toContainText('12×')
-  await expect(demo.locator('tbody tr').first()).toContainText('32×32×16')
+  await expect(out.locator('b')).toHaveText('12')
+  await demo.getByRole('button', { name: 'f = 16' }).click()
+  await expect(out.locator('b')).toHaveText('48')
+  await expect(out).toContainText('4')
 })
 
 test('scale lab: residual signal 0.068 vs 0.375 at t = T', async ({ page }) => {

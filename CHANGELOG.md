@@ -1,6 +1,9 @@
 # 变更日志
 
 ## [2026-10-19] - Changed
+- LDM 第 1 步：删除「为什么不压得更狠」一节（VQGAN + 自回归的对比和 $f$ 的取舍实验），同时删除对应的自测卡片 `why-mild-f`；本步小结表保留。压缩演示只保留 32×32 局部网格，去掉输入分辨率选项和数值表，$f$、$c$ 两组按钮并排，下方只显示下采样次数和压缩率。窄屏下分段按钮内边距缩小，6 个选项能排在一行。相关文件：`src/topics/ldm/index.mdx`、`src/topics/ldm/demos/CompressionDemo.tsx`、`src/styles/demo.css`、`tests/e2e/ldm.spec.ts`。
+
+## [2026-10-19] - Changed
 - LDM：没有实质交互的 4 个“交互”框改成正文中的嵌入图。率失真曲线（示意）本来就没有交互；encoder 逐层拆解原来点方块只显示正文已有的文字，改成静态图并标出 `conv_out` 瓶颈；训练与采样流程原来的逐步点击和正文编号列表重复，改成训练、采样两行并列的流程图；展平做注意力原来一次只能看一个层级，改成三个层级并排的对照表。现在保留 10 个交互演示。skill 的演示规范补充了“先判断要不要做成交互”。相关文件：`src/topics/ldm/demos/*Figure.tsx`、`src/topics/ldm/index.mdx`、`.claude/skills/learn-topic-page/references/demo-rules.md`。
 
 ## [2026-10-19] - Fixed

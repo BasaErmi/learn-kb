@@ -31,8 +31,8 @@ $$
 
 <Roadmap legend={{ goal: '动机', basis: '第一阶段', pre: '第二阶段', core: '条件与延伸' }} nodes={[
   { id: 'step-1', label: '为什么压缩', sub: '感知压缩与语义压缩', kind: 'goal' },
-  { id: 'step-2', label: 'autoencoder', sub: '结构、损失、f 与 c', kind: 'basis' },
-  { id: 'step-3', label: '缩放系数', sub: '让 z_T 仍是纯噪声', kind: 'basis' },
+  { id: 'step-2', label: 'autoencoder', sub: '结构、损失、$f$ 与 $c$', kind: 'basis' },
+  { id: 'step-3', label: '缩放系数', sub: '让 $z_T$ 仍是纯噪声', kind: 'basis' },
   { id: 'step-4', label: 'latent 扩散', sub: '训练、采样、UNet', kind: 'pre' },
   { id: 'step-5', label: '条件生成', sub: '拼接与 cross-attention', kind: 'core' },
   { id: 'step-6', label: '到 DiT', sub: '只换去噪网络', kind: 'core' },
@@ -60,7 +60,7 @@ $$
 
 </section>
 
-<Step id="step-1" n={1} title="为什么要在 latent 空间里扩散" gist="像素空间扩散把大量算力花在看不出来的细节上；先压缩、再扩散，维度能降为原来的 1/48。">
+<Step id="step-1" n={1} title="为什么要在 latent 空间里扩散" gist="像素空间扩散把大量算力花在看不出来的细节上；先压缩、再扩散，维度能降为原来的 $\frac{1}{48}$。">
 
 <KeyPoint>
 
@@ -296,7 +296,7 @@ autoencoder 的 KL 权重太小，latent 的尺度不受控。扩散模型直接
 
 </Step>
 
-<Step id="step-3" n={3} title="缩放系数 s：让 z_T 仍然是纯噪声" gist="扩散要求的是 z_T 近似标准正态，不要求 z_0 是正态；s = 1/std(z) 只把尺度拉回 1，作用等同于像素空间的归一化。">
+<Step id="step-3" n={3} title="缩放系数 $s$：让 $z_T$ 仍然是纯噪声" gist="扩散要求的是 $z_T$ 近似标准正态，不要求 $z_0$ 是正态；$s = \frac{1}{\operatorname{std}(z)}$ 只把尺度拉回 1，作用等同于像素空间的归一化。">
 
 <KeyPoint>
 
@@ -601,7 +601,7 @@ SD 的 attention 模块夹在卷积层之间，卷积和零填充已经把位置
 
 </Step>
 
-<Step id="step-5" n={5} title="条件生成：拼接与 cross-attention" gist="与图像空间对齐的条件拼到输入通道上；没有空间结构的条件（文本）先用 τθ 编码，再通过 cross-attention 注入。">
+<Step id="step-5" n={5} title="条件生成：拼接与 cross-attention" gist="与图像空间对齐的条件拼到输入通道上；没有空间结构的条件（文本）先用 $\tau_\theta$ 编码，再通过 cross-attention 注入。">
 
 <KeyPoint>
 

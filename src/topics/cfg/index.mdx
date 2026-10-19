@@ -34,7 +34,7 @@ $$
   { id: 'step-4', label: '去掉分类器', sub: '推出核心公式', kind: 'core' },
   { id: 'step-5', label: '训练', sub: 'label dropout', kind: 'core' },
   { id: 'step-6', label: '采样', sub: '两次预测再组合', kind: 'core' },
-  { id: 'step-7', label: '调参', sub: 's 的取舍', kind: 'core' },
+  { id: 'step-7', label: '调参', sub: '$s$ 的取舍', kind: 'core' },
 ]} />
 
 ### 记号
@@ -58,7 +58,7 @@ DDPM 文献习惯把真实加噪分布写成 $q(x_t)$，score / guidance 文献�
 
 </section>
 
-<Step id="step-1" n={1} title="CFG 要解决什么问题" gist="学到了 p(x|y) 不等于生成得好：我们想要一个用多样性换质量的旋钮。">
+<Step id="step-1" n={1} title="CFG 要解决什么问题" gist="学到了 $p(x \mid y)$ 不等于生成得好：我们想要一个用多样性换质量的旋钮。">
 
 <Anchor id="sharpen-goal" />
 
@@ -330,7 +330,7 @@ $$
 
 </Step>
 
-<Step id="step-3" n={3} title="Classifier guidance：CFG 的前身" gist="扩散模型给不了“像不像 y”的梯度，那就另外训练一个分类器来提供它。">
+<Step id="step-3" n={3} title="Classifier guidance：CFG 的前身" gist="扩散模型给不了“像不像 $y$”的梯度，那就另外训练一个分类器来提供它。">
 
 <KeyPoint>
 
@@ -719,7 +719,7 @@ DDIM 里 $\hat{x}_0$ 是 $\epsilon$ 的线性函数。如果不在 $\epsilon$ �
 
 </Step>
 
-<Step id="step-7" n={7} title="guidance scale 的影响" gist="s 是质量与多样性之间的旋钮：适中时最好，过大会过饱和、出伪影。">
+<Step id="step-7" n={7} title="guidance scale 的影响" gist="$s$ 是质量与多样性之间的旋钮：适中时最好，过大会过饱和、出伪影。">
 
 <KeyPoint>
 

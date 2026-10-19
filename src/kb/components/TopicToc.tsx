@@ -1,3 +1,4 @@
+import { TexText } from './Tex'
 import { useEffect, useState } from 'react'
 import type { TopicStep } from '@/topics/registry'
 import { scrollToId } from '@/kb/scroll'
@@ -36,7 +37,7 @@ export function TopicToc({ steps }: { steps: TopicStep[] }) {
               onClick={() => scrollToId(s.id)}
             >
               <span className={visited.includes(s.id) ? 'kb-toc-dot is-read' : 'kb-toc-dot'} aria-hidden />
-              {s.title}
+              <TexText>{s.title}</TexText>
             </button>
           </li>
         ))}

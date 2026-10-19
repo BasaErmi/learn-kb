@@ -1,4 +1,5 @@
 import { scrollToId } from '@/kb/scroll'
+import { TexText } from './Tex'
 
 export interface RoadNode { id: string; label: string; sub: string; kind: 'goal' | 'basis' | 'pre' | 'core' }
 
@@ -15,8 +16,8 @@ export function Roadmap({ nodes, legend }: { nodes: RoadNode[]; legend?: Partial
           <li key={n.id} className={`kind-${n.kind}`}>
             <button type="button" onClick={() => scrollToId(n.id)}>
               <span className="kb-road-idx">{String(i + 1).padStart(2, '0')}</span>
-              <span className="kb-road-label">{n.label}</span>
-              <span className="kb-road-sub">{n.sub}</span>
+              <span className="kb-road-label"><TexText>{n.label}</TexText></span>
+              <span className="kb-road-sub"><TexText>{n.sub}</TexText></span>
             </button>
           </li>
         ))}

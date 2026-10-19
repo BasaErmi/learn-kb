@@ -10,7 +10,7 @@ export const meta: TopicMeta = {
     { id: 'overview', title: '总览与记号' },
     { id: 'step-1', title: '1 · 为什么在 latent 里扩散' },
     { id: 'step-2', title: '2 · 第一阶段：autoencoder' },
-    { id: 'step-3', title: '3 · 缩放系数 s' },
+    { id: 'step-3', title: '3 · 缩放系数 $s$' },
     { id: 'step-4', title: '4 · 在 latent 上训练与采样' },
     { id: 'step-5', title: '5 · 条件生成' },
     { id: 'step-6', title: '6 · 从 LDM 到 DiT' },

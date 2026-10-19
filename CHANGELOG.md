@@ -1,5 +1,8 @@
 # 变更日志
 
+## [2026-10-19] - Fixed
+- 路线图节点、步骤标题、一句话结论（gist）和目录里的公式原来按纯文本显示（如“让 z_T 仍是纯噪声”），现在 `Roadmap`、`Step`、`TopicToc` 都支持 `$...$` 并用 KaTeX 渲染。LDM 和 CFG 中相应的文字改成了公式。相关文件：`src/kb/components/Roadmap.tsx`、`Step.tsx`、`TopicToc.tsx`、`src/topics/ldm/`、`src/topics/cfg/index.mdx`。
+
 ## [2026-10-19] - Added
 - 新专题「Latent Diffusion Model」（`ldm`），6 步：为什么在 latent 里扩散 → autoencoder → 缩放系数 → latent 上的训练与采样 → 条件生成 → 到 DiT。14 个交互演示：压缩计算器、率失真示意、encoder 逐层拆解、重建对比（原图 / SD VAE / ft-MSE / FLUX VAE，可拖分隔线、点选放大）、latent 直方图与缩放、`std(z₀)` 对方差和 SNR 的影响、缩放与不缩放的前向加噪对比、训练与采样流程、SD 1.5 采样轨迹、普通 / 1×1 / depthwise 卷积对比、展平做注意力的规模与参数量、逐词 cross-attention 图、inpainting 三种做法对比、patchify。页面上的图都是真实模型的输出：VAE 重建、加噪后解码、采样过程中的 $\hat z_0$、cross-attention 图、inpainting 结果、两个 decoder 解码同一 latent。计算逻辑在 `src/topics/ldm/lib/ldm.ts`（15 个单元测试），实测数值在 `lib/measured.json`；新增 `tests/e2e/ldm.spec.ts`（12 个测试，含跨专题链接往返）。相关文件：`src/topics/ldm/`、`public/images/ldm/`、`src/topics/registry.ts`。
 - 共用组件：`Seg` 分段按钮；`Demo` 新增 `schematic`（“示意”角标）和 `note`（底部说明）；图片条样式 `.kb-strip` + 左上角标签 `.kb-tag`；`.kb-svg-scroll` 让宽 SVG 在手机上于演示框内横向滚动。样式参考了 OpenWAM 交互页。相关文件：`src/kb/components/Seg.tsx`、`src/kb/components/Demo.tsx`、`src/styles/demo.css`。

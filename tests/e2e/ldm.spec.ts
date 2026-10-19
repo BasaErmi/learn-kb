@@ -19,7 +19,7 @@ test('LDM page renders all math and demos without errors', async ({ page }) => {
   await page.goto('./#/t/ldm')
   await expect(page.locator('#step-6')).toBeAttached()
   expect(await page.locator('.katex-error').count()).toBe(0)
-  expect(await page.locator('.kb-demo').count()).toBeGreaterThanOrEqual(14)
+  expect(await page.locator('.kb-demo').count()).toBeGreaterThanOrEqual(10)
   expect(errors).toEqual([])
 })
 

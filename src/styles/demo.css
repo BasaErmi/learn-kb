@@ -111,3 +111,4 @@
 /* 窄屏时宽 SVG 保持可读宽度，在演示框内横向滚动 */
 .kb-svg-scroll { overflow-x: auto; }
 @media (max-width: 600px) { .kb-svg-scroll > svg { min-width: 560px; } }
+.kb-num-table.kb-label-col td:first-child { font-family: var(--sans); }

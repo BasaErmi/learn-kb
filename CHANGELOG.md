@@ -1,5 +1,8 @@
 # 变更日志
 
+## [2026-10-19] - Changed
+- LDM：没有实质交互的 4 个“交互”框改成正文中的嵌入图。率失真曲线（示意）本来就没有交互；encoder 逐层拆解原来点方块只显示正文已有的文字，改成静态图并标出 `conv_out` 瓶颈；训练与采样流程原来的逐步点击和正文编号列表重复，改成训练、采样两行并列的流程图；展平做注意力原来一次只能看一个层级，改成三个层级并排的对照表。现在保留 10 个交互演示。skill 的演示规范补充了“先判断要不要做成交互”。相关文件：`src/topics/ldm/demos/*Figure.tsx`、`src/topics/ldm/index.mdx`、`.claude/skills/learn-topic-page/references/demo-rules.md`。
+
 ## [2026-10-19] - Fixed
 - LDM 第 1 步「率失真（rate-distortion）」显示成带星号的原文：CommonMark 规定结尾的 `**` 前是标点、后面紧跟汉字时不算加粗。改为把括号移到加粗外面。两个专题已全部扫描，只有这一处；skill 的 MDX 注意事项补充了这条。相关文件：`src/topics/ldm/index.mdx`。
 

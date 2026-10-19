@@ -1,14 +1,14 @@
 import { CompressionDemo } from './demos/CompressionDemo'
-import { RateDistortionChart } from './demos/RateDistortionChart'
-import { EncoderDemo } from './demos/EncoderDemo'
+import { RateDistortionFigure } from './demos/RateDistortionFigure'
+import { EncoderFigure } from './demos/EncoderFigure'
 import { ReconCompare } from './demos/ReconCompare'
 import { LatentStats } from './demos/LatentStats'
 import { ScaleLab } from './demos/ScaleLab'
 import { ForwardScaleDemo } from './demos/ForwardScaleDemo'
-import { PipelineDemo } from './demos/PipelineDemo'
+import { PipelineFigure } from './demos/PipelineFigure'
 import { TrajectoryDemo } from './demos/TrajectoryDemo'
 import { ConvDemo } from './demos/ConvDemo'
-import { FlattenAttnDemo } from './demos/FlattenAttnDemo'
+import { FlattenAttnFigure } from './demos/FlattenAttnFigure'
 import { CrossAttnDemo } from './demos/CrossAttnDemo'
 import { InpaintDemo } from './demos/InpaintDemo'
 import { PatchifyDemo } from './demos/PatchifyDemo'
@@ -99,7 +99,7 @@ DDPM 的网络 $\epsilon_\theta(x_t, t)$ 直接作用在图像 $x \in \mathbb{R}
 
 像素空间的损失对每个像素一视同仁，网络把大量算力花在建模感知上不重要的高频细节上。而生成模型真正难、真正有价值的部分是语义那一层：构图、物体、结构。
 
-<RateDistortionChart />
+<RateDistortionFigure />
 
 ### 两件事交给两个模型
 
@@ -183,7 +183,7 @@ encoder 由 ResBlock 和步长 2 的卷积组成。每次下采样长宽各减�
 
 真正的压缩发生在 encoder 末尾的**一个输出卷积** `conv_out` 上：$3 \times 3$ 卷积把 512 通道直接压到 $2c = 8$。512 到 8 很陡，之所以可行，是因为前面所有层都在为这个瓶颈做准备，重建损失和 GAN 损失会迫使这 8 个通道携带足够还原图像的信息。decoder 是对称的：`post_quant_conv` 之后，`conv_in` 用一个 $3 \times 3$ 卷积把 4 通道直接升回 512，再逐级上采样。
 
-<EncoderDemo />
+<EncoderFigure />
 
 <Aside title="quant_conv 这个名字">
 
@@ -443,7 +443,7 @@ autoencoder 已经训练好并**冻结**，扩散训练时不再更新它。一�
 
 采样时从形状为 $h \times w \times c$ 的 $z_T \sim \mathcal{N}(0, I)$ 出发，用任意采样器（DDPM、DDIM、DPM-Solver 等）逐步去噪得到 $z_0$，最后反缩放并解码：$\tilde x = \mathcal{D}(\frac{z_0}{s})$。decoder 只在最后调用**一次**，而去噪要调用网络几十到上千次，所以采样成本几乎全落在 latent 空间里，这是 LDM 采样快的根本原因。DDIM 的公式原封不动地适用，只要把所有 $x$ 换成 $z$。
 
-<PipelineDemo />
+<PipelineFigure />
 
 看一次真实的采样过程：构图在前几步就定下来了，后面的步骤主要在修细节。
 
@@ -523,7 +523,7 @@ SD 里的“注意力”实际是一个小型 Transformer block（`SpatialTransf
 
 self-attention 对 token 顺序是置换不变的，但 attention 模块前后都是卷积层，卷积配合零填充会在特征里隐式编码位置（靠近边界和处在中心的位置响应不同），所以展平后的特征已经自带位置信息。注意力矩阵是 $N \times N$，最高分辨率层 $N = 4096$，每个头约 1677 万个元素，这是 SD 显存占用大的主要原因之一，后来普遍用 xFormers 或 FlashAttention 优化。
 
-<FlattenAttnDemo />
+<FlattenAttnFigure />
 
 <Aside title="LDM 原论文的注意力">
 

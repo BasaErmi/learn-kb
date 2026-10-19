@@ -163,10 +163,11 @@ test('toc read progress resets on each visit', async ({ page }) => {
 
 test('home shows mastered flashcard count', async ({ page }) => {
   await page.goto('./#/')
-  await expect(page.locator('.kb-card-meta')).not.toContainText('已掌握')
+  const meta = page.getByRole('link', { name: /Classifier-Free Guidance/ }).locator('.kb-card-meta')
+  await expect(meta).not.toContainText('已掌握')
   await page.evaluate(() => localStorage.setItem('kb:cfg:mastered', JSON.stringify(['a', 'b'])))
   await page.reload()
-  await expect(page.locator('.kb-card-meta')).toContainText('已掌握 2 张闪卡')
+  await expect(meta).toContainText('已掌握 2 张闪卡')
 })
 
 test('corrupted localStorage does not break the page', async ({ page }) => {

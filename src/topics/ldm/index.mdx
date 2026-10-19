@@ -1,0 +1,1026 @@
+import { CompressionDemo } from './demos/CompressionDemo'
+import { RateDistortionChart } from './demos/RateDistortionChart'
+import { EncoderDemo } from './demos/EncoderDemo'
+import { ReconCompare } from './demos/ReconCompare'
+import { LatentStats } from './demos/LatentStats'
+import { ScaleLab } from './demos/ScaleLab'
+import { ForwardScaleDemo } from './demos/ForwardScaleDemo'
+import { PipelineDemo } from './demos/PipelineDemo'
+import { TrajectoryDemo } from './demos/TrajectoryDemo'
+import { ConvDemo } from './demos/ConvDemo'
+import { FlattenAttnDemo } from './demos/FlattenAttnDemo'
+import { CrossAttnDemo } from './demos/CrossAttnDemo'
+import { InpaintDemo } from './demos/InpaintDemo'
+import { PatchifyDemo } from './demos/PatchifyDemo'
+
+<section id="overview" className="kb-section">
+
+## 总览与记号
+
+<KeyPoint>
+
+$$
+\underbrace{x \xrightarrow{\ \mathcal{E}\ } z}_{\text{感知压缩}} \qquad \underbrace{z_T \to \cdots \to z_0}_{\text{latent 里的扩散}} \qquad \underbrace{z_0 \xrightarrow{\ \mathcal{D}\ } \tilde x}_{\text{解码}}
+$$
+
+先训练一个 autoencoder，把图像压缩成感知上几乎无损的低维 latent；再在 latent 上做和 DDPM 一模一样的扩散。autoencoder 负责高频细节，扩散模型只负责语义和结构。这就是 Stable Diffusion 和 DiT 的共同框架（Rombach et al., CVPR 2022）。
+
+</KeyPoint>
+
+像素空间的扩散模型很贵，而且大部分算力花在了人眼看不出来的细节上。LDM 的做法是把这部分细节交给一个单独训练的 autoencoder，扩散模型只在压缩后的 latent 上工作。但 latent 的数值尺度和像素不同，需要先校准，DDPM 的噪声调度才能照常成立。之后的训练、采样和条件注入几乎原封不动，DiT 也只是在这个框架里把 UNet 换成了 Transformer。点击节点可以跳到对应的步骤。
+
+<Roadmap legend={{ goal: '动机', basis: '第一阶段', pre: '第二阶段', core: '条件与延伸' }} nodes={[
+  { id: 'step-1', label: '为什么压缩', sub: '感知压缩与语义压缩', kind: 'goal' },
+  { id: 'step-2', label: 'autoencoder', sub: '结构、损失、f 与 c', kind: 'basis' },
+  { id: 'step-3', label: '缩放系数', sub: '让 z_T 仍是纯噪声', kind: 'basis' },
+  { id: 'step-4', label: 'latent 扩散', sub: '训练、采样、UNet', kind: 'pre' },
+  { id: 'step-5', label: '条件生成', sub: '拼接与 cross-attention', kind: 'core' },
+  { id: 'step-6', label: '到 DiT', sub: '只换去噪网络', kind: 'core' },
+]} />
+
+### 记号
+
+| 记号 | 含义 |
+| --- | --- |
+| $x \in \mathbb{R}^{H \times W \times 3}$ | 图像，像素归一化到 $[-1, 1]$ |
+| $\mathcal{E}$，$\mathcal{D}$ | autoencoder 的 encoder 和 decoder |
+| $f$ | 下采样倍率，latent 边长是图像的 $\frac{1}{f}$ |
+| $c$ | latent 的通道数 |
+| $z \in \mathbb{R}^{h \times w \times c}$ | encoder 输出的 latent，$h = \frac{H}{f}$，$w = \frac{W}{f}$ |
+| $s$ | 缩放系数，$z_0 = s \cdot z$；SD 1.x 和 DiT 用 $s = 0.18215$ |
+| $z_t$ | 加噪到第 $t$ 步的 latent，$z_t = \sqrt{\bar\alpha_t}\,z_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$ |
+| $\epsilon_\theta(z_t, t, \tau_\theta(y))$ | 去噪网络，$\tau_\theta$ 把条件 $y$ 编码成一组向量 |
+| $w$ | CFG 的 guidance scale |
+
+<Pitfall title="两个容易撞车的符号">
+
+本页的 $s$ 专指 latent 的**缩放系数**。<Ref topic="cfg" to="overview">CFG 专题</Ref>里 guidance scale 记作 $s$，这里为了不冲突改记作 $w$，公式是 $\hat\epsilon = \epsilon_\varnothing + w\,(\epsilon_y - \epsilon_\varnothing)$，$w = 1$ 表示不做 guidance。SD 默认的 7.5 就是这个约定下的值，不是 CFG 论文里 $(1+w)$ 那种约定。
+
+</Pitfall>
+
+</section>
+
+<Step id="step-1" n={1} title="为什么要在 latent 空间里扩散" gist="像素空间扩散把大量算力花在看不出来的细节上；先压缩、再扩散，维度能降为原来的 1/48。">
+
+<KeyPoint>
+
+像素空间扩散的训练目标是
+
+$$
+\mathcal{L}_{\text{DM}} = \mathbb{E}_{x,\,\epsilon,\,t}\left[\|\epsilon - \epsilon_\theta(x_t, t)\|_2^2\right]
+$$
+
+LDM 把 $x$ 换成 autoencoder 压缩后的 $z$，目标形式不变：
+
+$$
+\mathcal{L}_{\text{LDM}} = \mathbb{E}_{\mathcal{E}(x),\,\epsilon,\,t}\left[\|\epsilon - \epsilon_\theta(z_t, t)\|_2^2\right]
+$$
+
+$256 \times 256$ 的图、$f = 8$、$c = 4$ 时，维度从 196,608 降到 4,096（48 倍），空间位置少 64 倍，注意力矩阵小约 4096 倍。
+
+</KeyPoint>
+
+<Detail>
+
+### 像素空间扩散贵在哪里
+
+DDPM 的网络 $\epsilon_\theta(x_t, t)$ 直接作用在图像 $x \in \mathbb{R}^{H \times W \times 3}$ 上。成本来自三处：
+
+- **训练**：每一步都要在全分辨率上跑 UNet。ADM 这类像素空间模型动辄要几百上千 GPU-day。
+- **采样**：要串行跑几十到上千步，每一步都是全分辨率的前向计算。
+- **注意力**：self-attention 的计算量是 token 数的平方。$256 \times 256$ 的图如果在高分辨率层做注意力，代价非常高，所以像素空间模型通常只在 $16 \times 16$、$8 \times 8$ 这类低分辨率层放注意力。
+
+### 大部分比特是看不出来的细节
+
+论文从**率失真（rate-distortion）**的角度看这个问题。把一张图压缩到越来越低的码率，失真的变化分成两段：
+
+- **感知压缩（perceptual compression）**：先丢掉大量比特，但丢的只是高频纹理这类人眼几乎察觉不到的细节。
+- **语义压缩（semantic compression）**：码率继续降低，才开始真正丢失语义和构图。
+
+像素空间的损失对每个像素一视同仁，网络把大量算力花在建模感知上不重要的高频细节上。而生成模型真正难、真正有价值的部分是语义那一层：构图、物体、结构。
+
+<RateDistortionChart />
+
+### 两件事交给两个模型
+
+既然两段性质不同，就分开做：
+
+- 先训练一个 autoencoder。encoder $\mathcal{E}$ 把图像压到 $z = \mathcal{E}(x) \in \mathbb{R}^{h \times w \times c}$，$h = \frac{H}{f}$，$w = \frac{W}{f}$。它负责感知上等价的压缩，丢掉看不出来的细节，decoder $\mathcal{D}$ 再把它们补回来。
+- 再在 $z$ 上训练扩散模型，目标形式和 DDPM 一样，只是把 $x$ 换成了 $z$：$\mathcal{L}_{\text{LDM}} = \mathbb{E}_{\mathcal{E}(x),\,\epsilon,\,t}\left[\|\epsilon - \epsilon_\theta(z_t, t)\|_2^2\right]$。
+
+autoencoder 训练好之后就固定下来，可以给不同的扩散模型反复使用。DiT 正是直接拿了 Stable Diffusion 的 autoencoder，见<Ref to="step-6">第 6 步</Ref>。
+
+### 算一下省了多少
+
+以 $256 \times 256$ 的图、$f = 8$、$c = 4$ 为例（Stable Diffusion 和 DiT 的配置）：
+
+$$
+\text{像素：}\ 256 \times 256 \times 3 = 196{,}608 \qquad \text{latent：}\ 32 \times 32 \times 4 = 4{,}096
+$$
+
+维度减少 48 倍。空间分辨率从 $256^2$ 降到 $32^2$，如果按空间位置做注意力，token 数少 64 倍，注意力矩阵少 $64^2 = 4096$ 倍。这正是 DiT 能直接用纯 Transformer 处理图像的前提。
+
+<CompressionDemo />
+
+### 为什么不压得更狠
+
+LDM 之前已经有两阶段方法，比如 VQ-VAE / VQGAN 加自回归 Transformer。自回归模型把图像当作一维序列，没有空间归纳偏置，只能靠很强的压缩（$f = 16$ 甚至更大）让序列变短。压得太狠，重建质量下降，生成的细节上限也被拉低。
+
+扩散模型的 UNet 有卷积带来的空间归纳偏置，能直接处理二维的 latent，所以 LDM 只需要**温和的压缩**。论文实验中 $f = 4$ 到 $16$ 最好：$f = 1, 2$ 基本还是像素空间，训练很慢；$f = 32$ 训练很快，但很早就进入平台期，因为重建本身丢了太多细节。
+
+| | 像素空间 DM | LDM |
+| --- | --- | --- |
+| 扩散作用对象 | $x \in \mathbb{R}^{H \times W \times 3}$ | $z \in \mathbb{R}^{\frac{H}{f} \times \frac{W}{f} \times c}$ |
+| 高频细节由谁负责 | 扩散模型自己 | autoencoder 的 decoder |
+| 扩散模型专注于 | 所有信息 | 语义和结构 |
+| 计算成本 | 高 | 低一到两个数量级 |
+
+</Detail>
+
+<Quiz>
+
+$512 \times 512$ 的图用 $f = 8$、$c = 4$ 的 autoencoder，latent 是什么形状？压缩率是多少？
+
+<Answer>
+
+$64 \times 64 \times 4$。压缩率 $\frac{3f^2}{c} = \frac{3 \times 64}{4} = 48$，和输入分辨率无关。
+
+</Answer>
+
+</Quiz>
+
+压缩方案定了，下一步看这个 autoencoder 具体怎么搭、怎么训练，以及 $f$ 和 $c$ 怎么取舍。
+
+</Step>
+
+<Step id="step-2" n={2} title="第一阶段：autoencoder 怎么训练" gist="全卷积网络加一个很窄的通道瓶颈，用 L1 + LPIPS + patch GAN 训练，只加极弱的 KL 正则；它是压缩器而不是生成器。">
+
+<KeyPoint>
+
+$$
+\mathcal{L}_{\text{AE}} = \min_{\mathcal{E}, \mathcal{D}} \max_{\psi} \Big( \mathcal{L}_{\text{rec}}(x, \tilde x) - \lambda\,\mathcal{L}_{\text{adv}}\big(\mathcal{D}(\mathcal{E}(x))\big) + \log D_\psi(x) + \mathcal{L}_{\text{reg}} \Big)
+$$
+
+- 重建：$\mathcal{L}_{\text{rec}} = \|x - \tilde x\|_1 + w_p \cdot \text{LPIPS}(x, \tilde x)$；对抗：patch GAN 判别器 $D_\psi$
+- 正则二选一：KL（$\beta \approx 10^{-6}$，SD 和 DiT 用这个）或 VQ
+- 重建质量是生成质量的上限：生成结果最好也只能达到 $\mathcal{D}(\mathcal{E}(x))$
+
+</KeyPoint>
+
+<Detail>
+
+### 网络结构：下采样 $\log_2 f$ 次
+
+整体是一个全卷积的 encoder–decoder：
+
+$$
+x \in \mathbb{R}^{H \times W \times 3} \xrightarrow{\ \mathcal{E}\ } z \in \mathbb{R}^{h \times w \times c} \xrightarrow{\ \mathcal{D}\ } \tilde x \in \mathbb{R}^{H \times W \times 3}
+$$
+
+encoder 由 ResBlock 和步长 2 的卷积组成。每次下采样长宽各减半，$n$ 次后边长缩小 $2^n$ 倍，所以 $f = 2^n$，下采样次数 $n = \log_2 f$，$f$ 也只取 1、2、4、8、16、32 这些 2 的幂。
+
+以 SD 的 VAE（$f = 8$）为例，配置里的通道倍率是 `ch_mult = (1, 2, 4, 4)`：4 个分辨率层级，除了最后一级，每级结尾下采样一次，一共 3 次。分辨率减半的同时通道数增加，用通道换空间，尽量减少每次下采样的信息损失。
+
+真正的压缩发生在 encoder 末尾的**一个输出卷积** `conv_out` 上：$3 \times 3$ 卷积把 512 通道直接压到 $2c = 8$。512 到 8 很陡，之所以可行，是因为前面所有层都在为这个瓶颈做准备，重建损失和 GAN 损失会迫使这 8 个通道携带足够还原图像的信息。decoder 是对称的：`post_quant_conv` 之后，`conv_in` 用一个 $3 \times 3$ 卷积把 4 通道直接升回 512，再逐级上采样。
+
+<EncoderDemo />
+
+<Aside title="quant_conv 这个名字">
+
+`quant_conv` 和 `post_quant_conv` 都是 $1 \times 1$ 卷积，名字沿用自 VQ 版本。KL 版本里没有量化，它们只是对通道做一次线性变换。
+
+</Aside>
+
+### encoder 输出的是一个分布
+
+KL 版本的 encoder 输出的不是 $z$ 本身，而是一个高斯分布的参数：最后的 8 个通道切成两半，分别作为均值和对数方差，
+
+$$
+\mathcal{E}(x) \to \big(\mu(x),\ \log\sigma^2(x)\big), \qquad q(z \mid x) = \mathcal{N}\big(z;\ \mu(x),\ \sigma^2(x)\big)
+$$
+
+$q(z \mid x)$ 沿用 VAE 的叫法，称为**近似后验**：看到图像 $x$ 之后，对 latent 的推断。“从后验采样”就是重参数化：
+
+$$
+z = \mu + \sigma \odot \epsilon, \qquad \epsilon \sim \mathcal{N}(0, I)
+$$
+
+因为 KL 权重很小，学到的 $\sigma$ 非常小（在 10 张公开测试图上实测，$\sigma$ 平均约 0.0005，而 $|\mu|$ 平均约 4.1），同一张图采样两次，latent 的相对差异只有约 0.02%。所以采样和直接取 $\mu$ 几乎没有差别，两种实现都常见：DiT 的训练代码用 `latent_dist.sample()`，相当于一点点数据增强；提前把数据集编码存盘时常用 `.mode()` 取均值。
+
+这一步的随机性真正起作用是在 **VAE 自己训练时**：decoder 必须能从带一点噪声的 $z$ 重建图像，这迫使 latent 空间在 $\mu$ 附近是平滑的，微小扰动不会解码出完全不同的图。这种平滑对后面的扩散模型有好处。
+
+### 损失函数的四个部分
+
+**重建损失：L1 + LPIPS。** L1 保证颜色和整体结构对齐。只用像素损失时，网络对不确定的高频纹理会取平均，结果就是模糊，因为高频细节在像素误差上“不划算”。LPIPS 是在预训练 VGG 特征空间里算的距离，衡量人眼觉得像不像，能逼出更清晰的纹理。这就是<Ref to="step-1">第 1 步</Ref>说的感知压缩：只要求重建在感知上逼真，不要求逐像素一致。
+
+**对抗损失：patch GAN。** 判别器 $D_\psi$ 不给整张图打分，而是输出一张真假概率图，每个位置判断一小块 patch 是否真实。这样能强制局部纹理逼真，又不需要判别器理解整体语义（那部分交给扩散模型）。权重 $\lambda$ 沿用 VQGAN 的自适应做法：
+
+$$
+\lambda = \frac{\|\nabla_{G_L} \mathcal{L}_{\text{rec}}\|}{\|\nabla_{G_L} \mathcal{L}_{\text{adv}}\| + \delta}
+$$
+
+$G_L$ 是 decoder 最后一层的参数，$\delta$ 防止除零。它让两种损失回传到最后一层的梯度大小相当，避免 GAN 压倒重建或者完全不起作用。判别器通常在训练若干步后才开启，先让重建收敛到合理水平。
+
+**正则项：KL 或 VQ 二选一。** KL 版本是
+
+$$
+\mathcal{L}_{\text{reg}} = \beta \cdot D_{\text{KL}}\big(\mathcal{N}(\mu, \sigma^2)\,\|\,\mathcal{N}(0, I)\big), \qquad \beta \approx 10^{-6}
+$$
+
+VQ 版本引入码本 $\{e_k\}_{k=1}^{K}$，把每个空间位置的向量换成最近的码字 $z_q = e_{k^*}$，$k^* = \arg\min_k \|z - e_k\|_2$，配合 codebook loss 和 commitment loss 训练。LDM 把量化层算作 decoder 的一部分，扩散模型实际是在量化**之前**的连续 latent 上训练的。实践中 KL 版本用得更广，SD、SDXL 和 DiT 用的都是它（`kl-f8`）。
+
+### 它和标准 VAE 的区别
+
+标准 VAE 的目标是 ELBO：
+
+$$
+\mathcal{L}_{\text{VAE}} = \mathbb{E}_{q(z \mid x)}\big[-\log p(x \mid z)\big] + \beta \cdot D_{\text{KL}}\big(q(z \mid x)\,\|\,\mathcal{N}(0, I)\big), \qquad \beta = 1
+$$
+
+$\beta = 1$ 时 latent 被拉得贴近 $\mathcal{N}(0, I)$，于是可以直接从先验采样来生成图像。LDM 不需要这样，生成由扩散模型负责，KL 项只是**防止 latent 的方差无限增大**。代价是 latent 实际上离 $\mathcal{N}(0, I)$ 很远，这就是<Ref to="step-3">第 3 步</Ref>缩放系数的来源。
+
+| | 标准 VAE | LDM 的 autoencoder |
+| --- | --- | --- |
+| 本身是不是生成模型 | 是，从先验采样即可生成 | 不是，只负责压缩和解码 |
+| KL 权重 | $\beta = 1$ | $\beta \approx 10^{-6}$ |
+| latent 是否接近 $\mathcal{N}(0, I)$ | 是 | 否，需要额外缩放 |
+| 重建损失 | 似然（通常对应 L2） | L1 + LPIPS + GAN |
+| latent 形状 | 通常是向量 | 二维特征图，保留空间布局 |
+
+工程上叫它 VAE 没问题（diffusers 里就叫 `AutoencoderKL`），但它的角色是一个**感知上近似无损的压缩器**。latent 保留二维空间结构，扩散模型的 UNet（或 DiT 的 patchify）才能利用空间归纳偏置。
+
+<Anchor id="recon-ceiling" />
+
+### 重建质量是生成质量的上限
+
+LDM 最终输出的图像一定是 decoder 画出来的：$\tilde x = \mathcal{D}(z_0)$，$z_0$ 由扩散模型生成。假设扩散模型**完美**学到了真实 latent 的分布，生成的 $z_0$ 和 $\mathcal{E}(x)$ 同分布，那么生成结果最好也就是 $\mathcal{D}(\mathcal{E}(x))$，也就是 autoencoder 对真实图像的重建。
+
+所以如果重建会把小字扭曲、把远处的人脸弄糊，生成图也一定有同样的问题，扩散模型再好也弥补不了 decoder 的缺陷。SD 1.x 生成小字和远处人脸效果差，相当一部分原因在 VAE 上。
+
+<ReconCompare />
+
+### $f$ 和 $c$ 的分工
+
+$c$ 是 latent 的通道数，也就是 `conv_out` 输出的 $2c$ 里的 $c$。$f$ 和 $c$ 一起决定压缩率：
+
+$$
+\text{压缩率} = \frac{H \times W \times 3}{\frac{H}{f} \times \frac{W}{f} \times c} = \frac{3f^2}{c}
+$$
+
+- **$f$ 控制空间分辨率**，直接决定扩散模型的计算量（UNet 的特征图大小、DiT 的 token 数）。$f$ 越大扩散越轻松，但重建丢的细节越多。
+- **$c$ 控制每个位置携带多少信息**，对扩散的计算量影响小，但直接影响重建质量。
+
+常见配置是 $f = 4, c = 3$（$16\times$）或 $f = 8, c = 4$（$48\times$）。后来的模型保持 $f = 8$、把 $c$ 提高：SD3 和 FLUX 用 $c = 16$，上面对比里 FLUX VAE 的小字和小人脸明显好得多。代价是 latent 信息更多、结构更复杂，扩散模型学起来更难，通常需要更大的模型。
+
+</Detail>
+
+<Pitfall title="“质量下限”还是“质量上限”">
+
+更准确的说法是：**重建误差是整个系统的误差下限**，或者说**重建质量是生成质量的上限**。两种说法方向相反，别混成“重建误差是质量下限”。
+
+</Pitfall>
+
+<Quiz>
+
+LDM 的 autoencoder 和标准 VAE 都有 KL 项，为什么 LDM 不能像 VAE 一样直接从 $\mathcal{N}(0, I)$ 采一个 $z$ 去解码生成图像？
+
+<Answer>
+
+因为 $\beta \approx 10^{-6}$，KL 几乎不约束 latent 的分布，真实 latent 的分布离 $\mathcal{N}(0, I)$ 很远（标准差约 5.5，形状也不是正态）。从 $\mathcal{N}(0, I)$ 采的点落不到 decoder 见过的区域，解码出来没有意义。生成必须交给扩散模型。
+
+</Answer>
+
+</Quiz>
+
+autoencoder 的 KL 权重太小，latent 的尺度不受控。扩散模型直接在这样的 latent 上训练会出问题，这是下一步要解决的。
+
+</Step>
+
+<Step id="step-3" n={3} title="缩放系数 s：让 z_T 仍然是纯噪声" gist="扩散要求的是 z_T 近似标准正态，不要求 z_0 是正态；s = 1/std(z) 只把尺度拉回 1，作用等同于像素空间的归一化。">
+
+<KeyPoint>
+
+$$
+s = \frac{1}{\operatorname{std}(z)}, \qquad z_0 = s \cdot \mathcal{E}(x), \qquad \tilde x = \mathcal{D}\!\left(\frac{z_0}{s}\right)
+$$
+
+方差保持的前向过程 $\operatorname{Var}(z_t) = \bar\alpha_t \operatorname{Var}(z_0) + (1 - \bar\alpha_t)$ 只有在 $\operatorname{Var}(z_0) \approx 1$ 时才处处为 1。SD 的 latent 标准差约 5.49，所以 $s \approx 0.18215$；不缩放时 $z_T$ 里残留 0.37 的信号（缩放后 0.068），所有时间步的 SNR 被放大约 30 倍。
+
+</KeyPoint>
+
+<Detail>
+
+### latent 的尺度不受控
+
+<Ref to="step-2">第 2 步</Ref>说过，KL 权重 $\beta \approx 10^{-6}$，几乎不约束 latent 的尺度。实测下来，encoder 输出的数值标准差远大于 1：
+
+<LatentStats />
+
+### 方差保持的前向过程依赖 $\operatorname{Var}(z_0) \approx 1$
+
+DDPM / DDIM 的设计目标是 $z_T \approx \mathcal{N}(0, I)$，这样采样时才能直接从标准正态出发。手段是方差保持（variance preserving）的前向过程，让 $\bar\alpha_t$ 逐渐趋近 0：
+
+$$
+z_t = \sqrt{\bar\alpha_t}\, z_0 + \sqrt{1 - \bar\alpha_t}\, \epsilon, \qquad \operatorname{Var}(z_t) = \bar\alpha_t \operatorname{Var}(z_0) + (1 - \bar\alpha_t)
+$$
+
+这里有一个隐含前提：$\operatorname{Var}(z_0) \approx 1$。只有这样每一步的方差才是 1，最终落到 $\mathcal{N}(0, I)$。如果 latent 的标准差是 5.49（方差约 30），会出现两个问题。
+
+**$z_T$ 不再是纯噪声。** SD 用的 scaled-linear 调度在 $T = 1000$ 时 $\bar\alpha_T \approx 0.0047$，$\sqrt{\bar\alpha_T} \approx 0.068$。$z_T$ 中残留信号的标准差是
+
+$$
+\sqrt{\bar\alpha_T} \cdot \operatorname{std}(z_0) \approx
+\begin{cases}
+0.068 \times 1 = 0.068 & \text{缩放后} \\
+0.068 \times 5.49 \approx 0.37 & \text{不缩放}
+\end{cases}
+$$
+
+不缩放时 $z_T$ 里还剩相当于噪声强度三分之一以上的信号。采样时从 $\mathcal{N}(0, I)$ 出发，和训练时见过的 $z_T$ 对不上，形成训练–采样不匹配。
+
+**所有时间步的信噪比都错位。** 信噪比
+
+$$
+\text{SNR}(t) = \frac{\bar\alpha_t \operatorname{Var}(z_0)}{1 - \bar\alpha_t}
+$$
+
+在所有时间步都被放大约 30 倍。原本设计好的调度（哪些步去粗结构、哪些步修细节）全部错位，大量时间步实际处在“几乎没加噪”的状态。实践中这个影响往往比终点更大：模型大部分训练步都在轻度加噪下学习，从高噪声中恢复结构的能力反而练得不够。
+
+<ScaleLab />
+
+拿一张真实的 latent 加噪再解码，差别一目了然：
+
+<ForwardScaleDemo />
+
+### 解决办法：统计一个标量
+
+在训练数据上统计 latent 的标准差，取倒数作为缩放系数：
+
+$$
+s = \frac{1}{\operatorname{std}(z)}, \qquad z_0 = s \cdot \mathcal{E}(x)
+$$
+
+SD 那个 VAE 算出来 $\operatorname{std}(z) \approx 5.49$，所以 $s \approx 0.18215$。解码时反过来，先除以 $s$ 再送进 $\mathcal{D}$。这完全是经验统计值，换一个 VAE 就要重新算：SDXL 重新训练了 VAE，系数变成 $0.13025$。DiT 的代码里也能直接看到这一步：编码后乘 `0.18215`，解码前除以它。
+
+两个细节：
+
+- 缩放只是乘一个**全局标量**，所有通道、所有位置共用同一个 $s$。它不改变分布形状，latent 缩放后仍然不是正态，也不需要是。
+- SD 和 DiT 只用了这一个标量。后来有些模型还会额外减一个均值：FLUX 的 VAE 配置里 `shift_factor = 0.1159`、`scaling_factor = 0.3611`，即 $z_0 = 0.3611\,(z - 0.1159)$。在上面那 10 张图上，FLUX latent 的标准差实测 2.74，正好约等于 $\frac{1}{0.3611} = 2.77$。
+
+<Aside title="缩放后也不是严格的纯噪声">
+
+即使缩放后，$\sqrt{\bar\alpha_T} = 0.068$ 也不是 0，SD 的 $z_T$ 本身就残留了一点信号。Lin et al.（*Common Diffusion Noise Schedules and Sample Steps Are Flawed*）指出这会让 SD 难以生成非常暗或非常亮的图，并提出把 $\bar\alpha_T$ 强制调到 0。
+
+</Aside>
+
+### 像素空间其实也做了同样的事
+
+像素空间扩散“不用乘系数”，**不是因为图像近似正态分布**。像素分布离正态很远（多峰、有界、强相关），和 latent 一样。真正的原因是像素空间也做了缩放，只是系数事先知道：
+
+$$
+x \leftarrow \frac{x}{127.5} - 1 \in [-1, 1]
+$$
+
+这本质上就是一次缩放加平移。像素范围固定且已知，不用统计就能把数据放到单位尺度附近（实际图像在 $[-1, 1]$ 下的标准差约 0.5，同一个量级，调度照样工作）。latent 没有预设范围，只能在数据上统计。
+
+| | 像素空间 | latent 空间 |
+| --- | --- | --- |
+| 数据分布是否接近正态 | 否 | 否 |
+| 原始尺度 | $[0, 255]$ | 无预设范围，std 约 5.49 |
+| 归一化方式 | 固定公式 $\frac{x}{127.5} - 1$ | 统计得到 $s = 0.18215$ |
+| 目的 | 让数据和噪声 $\epsilon$ 的尺度相当 | 同左 |
+
+</Detail>
+
+<Pitfall title="缩放解决的是尺度，不是分布形状">
+
+✗ “KL 很弱，latent 不服从标准正态，而 DDPM 要求数据是正态，所以要缩放。”
+
+✓ 扩散模型**不要求 $z_0$ 服从正态**，它本来就是用来学任意复杂分布的；它要求的是 **$z_T$ 近似 $\mathcal{N}(0, I)$**，以及各时间步的信噪比合理。$\beta$ 很小带来的问题是**方差偏离 1 很远**，缩放只调这一个尺度。
+
+</Pitfall>
+
+<Quiz>
+
+如果忘了乘 $s$，直接在原始 latent 上训练 SD 的扩散模型，采样时还从 $\mathcal{N}(0, I)$ 出发，会发生什么？
+
+<Answer>
+
+训练时模型见到的 $z_T$ 里还残留约 0.37 倍标准差的信号，而采样起点是纯噪声，两者对不上。更严重的是所有时间步的 SNR 被放大约 30 倍，大部分训练步都在轻度加噪下进行，模型从高噪声恢复结构的能力练得不够。结果是采样质量明显变差。
+
+</Answer>
+
+</Quiz>
+
+latent 准备好了：形状小、尺度为 1。接下来在它上面训练扩散模型，会发现几乎什么都不用改。
+
+</Step>
+
+<Step id="step-4" n={4} title="在 latent 上训练与采样" gist="扩散部分的数学和 DDPM / DDIM 一字不差，变的只是数据所在的空间；去噪网络是时间条件 UNet。">
+
+<KeyPoint>
+
+训练：$z_0 = s \cdot \mathcal{E}(x)$，$z_t = \sqrt{\bar\alpha_t}\,z_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$，最小化 $\|\epsilon - \epsilon_\theta(z_t, t)\|_2^2$；autoencoder 冻结。
+
+采样：$z_T \sim \mathcal{N}(0, I)$，用 DDPM / DDIM 去噪得到 $z_0$，最后只调用一次 $\tilde x = \mathcal{D}(\frac{z_0}{s})$。
+
+两阶段分开训练，依赖是单向的：扩散模型绑定 **encoder 定义的 latent 空间**。
+
+</KeyPoint>
+
+<Detail>
+
+### 训练与采样流程
+
+autoencoder 已经训练好并**冻结**，扩散训练时不再更新它。一次训练迭代是：
+
+1. 取一张图 $x$，编码并缩放：$z_0 = s \cdot \mathcal{E}(x)$
+2. 采样时间步 $t \sim \mathcal{U}\{1, \dots, T\}$ 和噪声 $\epsilon \sim \mathcal{N}(0, I)$
+3. 加噪：$z_t = \sqrt{\bar\alpha_t}\, z_0 + \sqrt{1 - \bar\alpha_t}\, \epsilon$
+4. 预测噪声并计算损失 $\mathcal{L}_{\text{LDM}} = \mathbb{E}_{z_0,\,\epsilon,\,t}\left[\|\epsilon - \epsilon_\theta(z_t, t)\|_2^2\right]$
+
+对照 DDPM，唯一的差别是第 1 步多了一次编码。encoder 冻结，所以很多实现会**提前把整个数据集编码成 latent 存盘**，训练时直接读 latent，完全省掉 encoder 的前向计算。
+
+采样时从形状为 $h \times w \times c$ 的 $z_T \sim \mathcal{N}(0, I)$ 出发，用任意采样器（DDPM、DDIM、DPM-Solver 等）逐步去噪得到 $z_0$，最后反缩放并解码：$\tilde x = \mathcal{D}(\frac{z_0}{s})$。decoder 只在最后调用**一次**，而去噪要调用网络几十到上千次，所以采样成本几乎全落在 latent 空间里，这是 LDM 采样快的根本原因。DDIM 的公式原封不动地适用，只要把所有 $x$ 换成 $z$。
+
+<PipelineDemo />
+
+看一次真实的采样过程：构图在前几步就定下来了，后面的步骤主要在修细节。
+
+<TrajectoryDemo />
+
+### 变了什么，没变什么
+
+| | 像素空间 DDPM | LDM |
+| --- | --- | --- |
+| 前向 / 反向过程公式 | 标准 | **完全相同** |
+| 训练目标 | $\epsilon$-prediction | **完全相同** |
+| 采样器 | DDPM / DDIM | **完全相同** |
+| 数据 | $x$，归一化到 $[-1, 1]$ | $z_0 = s \cdot \mathcal{E}(x)$ |
+| 网络输入输出通道 | 3 | $c$（如 4） |
+| 网络处理的分辨率 | $H \times W$ | $\frac{H}{f} \times \frac{W}{f}$ |
+| 采样后处理 | 无 | 解码 $\mathcal{D}(\frac{z_0}{s})$ |
+
+所以扩散这一侧的改进（新采样器、新噪声调度、CFG、新网络结构）都能直接搬过来用。但这不等于两者“完全解耦”，依赖是单向的：
+
+- **autoencoder 不依赖扩散模型。** 它独立训练，训练时不知道后面会接什么，可以训练一次、反复复用。
+- **扩散模型强依赖特定的 encoder。** 它学的是“这个 encoder 产生的 latent 分布”：每个通道的含义、数值尺度（连带 $s$）都绑定在这个 encoder 上。换一个 VAE，latent 空间就变了，扩散模型必须重训。比如 SD 1.x 的 UNet 不能直接配 SDXL 的 VAE，尽管两者都是 $c = 4$。
+
+有一个例外正好说明依赖绑在哪里。Stability 后来发布了改进版 VAE（`ft-EMA`、`ft-MSE`），可以直接替换原 VAE 而不用重训 UNet，因为它们**只微调了 decoder，encoder 没变**。latent 空间没动，扩散模型就不受影响。下面是同一个由 SD 1.5 生成的 latent 分别用两个 decoder 解码的结果：
+
+<div className="kb-figrow">
+  <Figure src="images/ldm/corgi.jpg" alt="原版 decoder 解码的柯基" caption="原版 decoder" />
+  <Figure src="images/ldm/corgi-mse.jpg" alt="ft-MSE decoder 解码的同一只柯基" caption="ft-MSE decoder：内容完全一致，纹理略平滑" />
+  <Figure src="images/ldm/corgi-diff.png" alt="两者的逐像素差异" caption="逐像素差异放大 8 倍（越深差异越大）：只在毛发、沙粒这类高频处有差别" />
+</div>
+
+### 去噪网络：时间条件 UNet
+
+LDM 的 $\epsilon_\theta$ 沿用 ADM（Dhariwal & Nichol, 2021）风格的 UNet。编码路径逐级下采样、解码路径逐级上采样，同分辨率之间有 skip connection；输入输出都是 $h \times w \times c$，因为预测的噪声和 latent 形状相同。
+
+**时间步条件。** $t$ 先做正弦位置编码，再过一个 MLP 得到时间嵌入 $\mathbf{e}_t$，注入每个 ResBlock。最简单的方式是加到特征上，$h \leftarrow h + \text{Linear}(\mathbf{e}_t)$；ADM 还有一个改进版 AdaGN，用 $\mathbf{e}_t$ 生成 GroupNorm 之后的缩放和偏移：
+
+$$
+h \leftarrow \text{GroupNorm}(h) \cdot \big(1 + \gamma(\mathbf{e}_t)\big) + \beta(\mathbf{e}_t)
+$$
+
+<Anchor id="adagn" />
+
+记住这个形式，DiT 的 adaLN 就是它在 Transformer 里的对应物。
+
+**注意力层。** 像素空间模型只能在低分辨率层放注意力；latent 本身只有 $32 \times 32$ 或 $64 \times 64$，可以在更多层级甚至最高分辨率上用注意力。以 SD 1.x 为例（生成 $512 \times 512$，latent 为 $64 \times 64 \times 4$）：
+
+| 层级 | 分辨率 | 通道数 | 注意力 |
+| --- | --- | --- | --- |
+| 1 | $64 \times 64$ | 320 | 有 |
+| 2 | $32 \times 32$ | 640 | 有 |
+| 3 | $16 \times 16$ | 1280 | 有 |
+| 4 | $8 \times 8$ | 1280 | 无 |
+
+SD 里的“注意力”实际是一个小型 Transformer block（`SpatialTransformer`）：self-attention + cross-attention + FFN，其中 cross-attention 负责文本条件，留到<Ref to="step-5">第 5 步</Ref>。
+
+<Anchor id="flatten-attn" />
+
+### 把特征图展平做注意力
+
+做法基本就是把特征图展平成序列做多头注意力，但有三个细节：展平的是 **UNet 中间层的特征图**而不是原始 latent；外面包了一层投影和残差；**没有位置编码**。设某层特征图为 $h \in \mathbb{R}^{H' \times W' \times C}$：
+
+1. GroupNorm，再用 $1 \times 1$ 卷积做 `proj_in`
+2. 展平成 token 序列：$\mathbb{R}^{H' \times W' \times C} \to \mathbb{R}^{N \times C}$，$N = H'W'$，每个空间位置是一个 token
+3. 经过 Transformer block（pre-norm，每个子层带残差）：
+
+   $$
+   \begin{aligned}
+   u &\leftarrow u + \text{SelfAttn}(\text{LN}(u)) \\
+   u &\leftarrow u + \text{CrossAttn}(\text{LN}(u),\ \text{text}) \\
+   u &\leftarrow u + \text{FFN}(\text{LN}(u))
+   \end{aligned}
+   $$
+
+   self-attention 是标准多头注意力，$Q, K, V$ 都来自 $u$，SD 1.x 用 8 个头：$\text{Attn}(Q, K, V) = \text{softmax}\big(\frac{QK^\top}{\sqrt{d_k}}\big) V$
+4. reshape 回 $H' \times W' \times C$，再用 $1 \times 1$ 卷积做 `proj_out`
+5. 加回进入这个模块之前的特征图（外层残差）
+
+self-attention 对 token 顺序是置换不变的，但 attention 模块前后都是卷积层，卷积配合零填充会在特征里隐式编码位置（靠近边界和处在中心的位置响应不同），所以展平后的特征已经自带位置信息。注意力矩阵是 $N \times N$，最高分辨率层 $N = 4096$，每个头约 1677 万个元素，这是 SD 显存占用大的主要原因之一，后来普遍用 xFormers 或 FlashAttention 优化。
+
+<FlattenAttnDemo />
+
+<Aside title="LDM 原论文的注意力">
+
+LDM 原论文的无条件模型用 ADM 风格的 `AttentionBlock`，思路一样，只是没有 cross-attention 和 FFN。
+
+</Aside>
+
+### $1 \times 1$ 卷积就是逐位置的线性层
+
+上面的 `proj_in`、`proj_out`，以及 VAE 里的 `quant_conv`，都是 $1 \times 1$ 卷积。
+
+普通的 $3 \times 3$ 卷积，每个输出位置看输入里以它为中心的 $3 \times 3$ 邻域。一个卷积核的形状是 $3 \times 3 \times C_{\text{in}}$，可以看成 $C_{\text{in}}$ 片 $3 \times 3$ 的切片：每片在对应的输入通道上卷积，得到 $C_{\text{in}}$ 张中间结果，再**逐位置求和**（不是取平均）并加偏置，得到**一个**输出通道。第 $k$ 个输出通道是
+
+$$
+y^{(k)} = \sum_{m=1}^{C_{\text{in}}} w_{k,m} * h^{(m)} + b_k
+$$
+
+“通道之间混合”指的就是这个求和。每个输出通道对应一个核，所以参数量是 $k^2 \cdot C_{\text{in}} \cdot C_{\text{out}}$，PyTorch 的权重形状正是 `(C_out, C_in, k, k)`。所有空间位置共用这组权重，所以参数量里没有 $H$、$W$ 的因子，只有计算量随位置数增长。
+
+$1 \times 1$ 卷积是 $k = 1$ 的特例：每片切片只是一个标量，每个输出位置只看输入的同一个位置。对位置 $(i, j)$ 上的通道向量 $h_{ij} \in \mathbb{R}^{C_{\text{in}}}$，
+
+$$
+y_{ij} = W h_{ij} + b, \qquad W \in \mathbb{R}^{C_{\text{out}} \times C_{\text{in}}}
+$$
+
+这正是一个全连接层（`nn.Linear`）做的事：把每个位置的通道向量单独拿出来，送进**同一个**线性层。“逐位置”指各位置独立处理，“线性层”指对通道维做的矩阵乘法。它只变换、重组通道，不混合空间。比如输入 4 通道、输出 5 通道，就是 5 个形状为 $1 \times 1 \times 4$ 的核，共 20 个权重加 5 个偏置。
+
+<ConvDemo />
+
+```python
+# x: (B, C_in, H, W)
+conv = nn.Conv2d(C_in, C_out, kernel_size=1)
+linear = nn.Linear(C_in, C_out)
+linear.weight.data = conv.weight.data.view(C_out, C_in)
+linear.bias.data = conv.bias.data
+
+y1 = conv(x)                                         # (B, C_out, H, W)
+y2 = linear(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+# y1 与 y2 相等：区别只是通道放在第 1 维还是最后一维
+```
+
+SD 2.x 以后 `proj_in` / `proj_out` 直接改成了 `nn.Linear`，正是因为两者等价，而展平后用线性层写起来更自然。Transformer 的 FFN 也是同一回事：对每个 token 独立做相同的变换。
+
+<Aside title="depthwise 卷积">
+
+另有一种卷积确实是每个输入通道单独一个核，叫 depthwise 卷积（MobileNet 里常见）：它**不做跨通道求和**，每片的结果直接成为一个输出通道，所以输出通道数等于输入通道数，参数量 $k^2 C_{\text{in}}$。
+
+</Aside>
+
+$1 \times 1$ 卷积的参数比同尺寸的 $3 \times 3$ 卷积少 9 倍，但绝对值不小：$C = 1280$ 时约 164 万。放到整个 block 里，`proj_in` + `proj_out` 共 $2C^2$，self-attention $4C^2$，FFN（GEGLU）$12C^2$，投影只占一小部分，它也不需要承担太多表达能力。而且参数量和计算量是两回事：同一个 $W$ 要应用到每个位置上，计算量是 $H'W' \cdot C^2$。网络的总容量来自**堆叠很多层**，SD 1.x 的 UNet 总共约 8.6 亿参数。
+
+</Detail>
+
+<Pitfall title="不是“完全解耦”">
+
+✗ autoencoder 和扩散模型完全解耦，可以随意搭配。
+
+✓ 两阶段**分开训练**，但依赖是单向的：扩散模型绑定 encoder 定义的 latent 空间，换 encoder 必须重训；只换 decoder（如 ft-MSE）可以。
+
+</Pitfall>
+
+<Quiz>
+
+为什么 SD 的 UNet 在展平特征图做 self-attention 时不加位置编码，而 DiT 必须加？
+
+<Answer>
+
+SD 的 attention 模块夹在卷积层之间，卷积和零填充已经把位置信息编进了特征。DiT 在 patchify 之后去掉了所有卷积，只剩 Transformer，self-attention 本身置换不变，所以必须显式加位置编码。
+
+</Answer>
+
+</Quiz>
+
+到这里的模型都是无条件的。下一步给它加上条件：类别、文本、遮罩……
+
+</Step>
+
+<Step id="step-5" n={5} title="条件生成：拼接与 cross-attention" gist="与图像空间对齐的条件拼到输入通道上；没有空间结构的条件（文本）先用 τθ 编码，再通过 cross-attention 注入。">
+
+<KeyPoint>
+
+$$
+\mathcal{L}_{\text{LDM}} = \mathbb{E}_{z_0,\,y,\,\epsilon,\,t}\left[\big\|\epsilon - \epsilon_\theta\big(z_t, t, \tau_\theta(y)\big)\big\|_2^2\right]
+$$
+
+- 空间对齐的条件（低清图、遮罩、分割图）→ 在通道维拼接：$\epsilon_\theta([z_t;\ \text{cond}], t)$
+- 序列型条件（文本）→ $\tau_\theta(y) \in \mathbb{R}^{M \times d_\tau}$，cross-attention：$Q = u W_Q$，$K = \tau_\theta(y) W_K$，$V = \tau_\theta(y) W_V$
+- 训练时约 10% 把条件换成空条件，采样时用 CFG
+
+</KeyPoint>
+
+<Detail>
+
+目标是从无条件的 $\epsilon_\theta(z_t, t)$ 扩展到 $\epsilon_\theta(z_t, t, y)$，$y$ 可以是类别、文本、语义分割图、低分辨率图像等。LDM 的贡献是一套**通用的条件注入框架**，按条件有没有空间结构分成两种方式。
+
+### 拼接：适合与图像空间对齐的条件
+
+超分辨率（输入低清图）、inpainting（输入挖了洞的图）、语义图生成图像，这些条件本身就是“图”，和 latent 的每个空间位置一一对应。做法是把条件变换到 latent 的分辨率，直接在通道维拼到 $z_t$ 上：
+
+$$
+\epsilon_\theta\big([\,z_t;\ \text{cond}\,],\ t\big)
+$$
+
+网络输入通道从 $c$ 变成 $c + c_{\text{cond}}$，其余不变。SD 的 inpainting 模型输入是 9 通道：
+
+| 通道数 | 内容 | 怎么得到 |
+| --- | --- | --- |
+| 4 | $z_t$ | 正常的带噪 latent |
+| 4 | 被遮挡图像的 latent | 原图中要重画的区域置零，即 $x \odot (1 - m)$，再过 VAE 编码 |
+| 1 | 遮罩 $m$ | $H \times W$ 的二值图插值缩小到 latent 分辨率 |
+
+遮罩 $m$ 标出哪些区域要重新生成：$m_{ij} = 1$ 表示这里要生成，$m_{ij} = 0$ 表示保留原图。有了被遮挡图像的 latent，还要单独给遮罩，是因为光看那 4 个通道，模型分不清某个区域是“被挖掉了”还是“原图这里本来就是灰色”，而且 VAE 编码会让边界变模糊。训练时用随机遮罩（矩形、随机笔画）挖掉训练图像的一部分作为条件，$z_t$ 则是**完整原图**的 latent 加噪，所以模型学的是“根据可见部分还原完整的图”。
+
+<Anchor id="inpaint-why-concat" />
+
+### 为什么不直接在条件的 latent 上去噪
+
+一个自然的想法是：既然有原图，直接从原图出发去噪，约束不是更强吗？这样的做法有两种。
+
+**做法 A：从被遮挡图像的 latent 加噪再去噪**（类似 img2img / SDEdit）。把它加噪到某个中间时间步 $t_0$，再从 $t_0$ 去噪回来。问题是被挖掉的区域里是零值造成的灰块，不是有意义的内容：$t_0$ 小，灰块残留，模型倾向于把它画成灰色的东西；$t_0$ 大，灰块被冲掉，但保留区域的信息也一起被冲掉了，结果和原图对不上。这种方法适合整体改风格、保持大致结构，不适合 inpainting。
+
+**做法 B：每一步把保留区域替换成原图的加噪版本**（RePaint、Blended Latent Diffusion 等）。从纯噪声出发，每一步去噪后：
+
+$$
+z_{t-1} \leftarrow m \odot z_{t-1}^{\text{生成}} + (1 - m) \odot \big(\sqrt{\bar\alpha_{t-1}}\, z_0^{\text{原图}} + \sqrt{1 - \bar\alpha_{t-1}}\, \epsilon\big)
+$$
+
+这确实是更强的约束：保留区域每一步都和原图一致，而且普通的 SD 就能用，不需要专门训练。但模型去噪时**只能看到加了噪的上下文**。高噪声阶段保留区域本身也几乎是噪声，模型不知道周围是什么，生成区域的大结构恰恰在这时定下来；到低噪声阶段才发现和周围对不上，已经很难修正，结果常见边界不连贯、光照不协调。RePaint 为此要反复“加噪回退再去噪”，采样时间成倍增加。另外 latent 里 $8\times$ 下采样后的遮罩很粗，硬替换会在边界留下痕迹。
+
+**拼接方案（C）的关键在于：拼接的条件是干净的，不随时间步变化。** 不管 $z_t$ 噪声多大，模型每一步都能看到完整的保留区域，从第一步起生成区域的构图就能和周围协调。
+
+<InpaintDemo />
+
+| | 约束方式 | 能否看到干净的上下文 | 是否需要专门训练 |
+| --- | --- | --- | --- |
+| A：从条件加噪出发 | 初始化 | 否 | 否 |
+| B：逐步替换 | 硬约束，保留区严格一致 | 否，只有加噪版本 | 否 |
+| C：拼接 | 软约束，模型学习如何协调 | **是** | 是 |
+
+拼接方案的代价是对保留区域只是软约束，输出的保留区域不保证和原图逐像素一致（还要经过 VAE 重建）。常规做法是**解码后在像素空间把保留区域贴回原图**，上面 C 的结果就是这样处理的。
+
+起点仍然必须是 $\mathcal{N}(0, I)$，道理和<Ref to="step-3">第 3 步</Ref>一样：训练时 $z_T$ 是纯噪声，采样起点就必须和它一致。条件信息应该通过输入通道告诉模型，而不是通过改变起点。
+
+### 条件编码器 $\tau_\theta$
+
+文本是一个 token 序列，和图像的空间位置没有对应关系，没法拼接。先用一个针对条件类型的编码器把 $y$ 转成一组向量：
+
+$$
+\tau_\theta(y) \in \mathbb{R}^{M \times d_\tau}
+$$
+
+$M$ 是条件编码器输出的 token 个数，$d_\tau$ 是每个 token 的维度。
+
+| 模型 | $\tau_\theta$ | $M \times d_\tau$ | 是否训练 |
+| --- | --- | --- | --- |
+| LDM 原论文（文生图） | 从头训练的 Transformer | — | 与 UNet 联合训练 |
+| SD 1.x | CLIP ViT-L/14 文本编码器 | $77 \times 768$ | 冻结 |
+| SD 2.x | OpenCLIP ViT-H 文本编码器 | $77 \times 1024$ | 冻结 |
+| 类别条件 | embedding 查找表 | $1 \times d$ | 训练 |
+
+SD 用冻结的预训练文本编码器，直接继承大规模图文对比学习得到的语义理解。
+
+<Aside title="SD 的 77 个 token">
+
+CLIP 文本编码器的上下文长度固定为 77（含起始符和结束符，实际能放 75 个 token）：短的补齐，长的截断，所以 SD 1.x 里很长的 prompt 后半段经常不起作用。SD 在 cross-attention 里不对填充位置做 mask；CLIP 是因果注意力，填充位置的输出能看到整句话，模型也学会了利用它们。用 T5 等编码器的模型会用可变长度并 mask 填充位置。
+
+</Aside>
+
+### cross-attention 的计算
+
+接着<Ref to="flatten-attn">第 4 步展平后的 Transformer block</Ref>：图像 token 为 $u \in \mathbb{R}^{N \times C}$，$N = H'W'$。cross-attention 和 self-attention 的唯一区别是 $K, V$ 的来源：
+
+$$
+Q = u\, W_Q, \qquad K = \tau_\theta(y)\, W_K, \qquad V = \tau_\theta(y)\, W_V, \qquad \text{CrossAttn}(u, y) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right) V
+$$
+
+- $Q$ 来自图像：$W_Q \in \mathbb{R}^{C \times d}$，$Q \in \mathbb{R}^{N \times d}$
+- $K, V$ 来自文本：$W_K, W_V \in \mathbb{R}^{d_\tau \times d}$，$K, V \in \mathbb{R}^{M \times d}$
+- 注意力矩阵 $QK^\top \in \mathbb{R}^{N \times M}$；输出 $N \times d$，经 $W_O$ 映射回 $C$ 维，以残差方式加回 $u$
+
+SD 1.x 最高分辨率层 $N = 4096$、$M = 77$，注意力矩阵 $4096 \times 77$，比 self-attention 的 $4096 \times 4096$ 小得多。$W_K, W_V$ 从 $d_\tau = 768$ 维映射过来，这就是 cross-attention 参数量里 $2 \cdot 768 \cdot C$ 的来源。
+
+直观上，**每个空间位置提出一个问题（$Q$），在 77 个文本 token 里找出与自己相关的（$QK^\top$ 的 softmax 权重），再把这些 token 的信息（$V$）按权重汇总过来。** 所以注意力图本身就反映了“图像的哪个区域对应哪个词”，Prompt-to-Prompt 等图像编辑方法正是通过操纵它来做局部编辑。
+
+<CrossAttnDemo />
+
+### 训练目标与 CFG
+
+训练目标只是给网络多了一个条件输入，其余和<Ref to="step-4">第 4 步</Ref>一样：
+
+$$
+\mathcal{L}_{\text{LDM}} = \mathbb{E}_{z_0,\,y,\,\epsilon,\,t}\left[\big\|\epsilon - \epsilon_\theta\big(z_t, t, \tau_\theta(y)\big)\big\|_2^2\right]
+$$
+
+$\tau_\theta$ 可训练时（LDM 原论文、类别 embedding）和 $\epsilon_\theta$ 一起端到端优化；冻结时（SD 的 CLIP）只训练 UNet。
+
+和 CFG 的结合（推导见 <Ref topic="cfg" to="step-4">CFG 第 4 步</Ref>）：训练时以一定概率（常用 10%）把条件替换成空条件 $\varnothing$，让同一个网络同时学会有条件和无条件预测。SD 里 $\varnothing$ 是**空字符串经过 CLIP 编码的结果**，不是全零向量；类别条件模型通常是一个额外的“空类别” embedding。采样时每一步算两次预测再外推：
+
+$$
+\hat\epsilon = \epsilon_\theta(z_t, t, \varnothing) + w \cdot \big(\epsilon_\theta(z_t, t, y) - \epsilon_\theta(z_t, t, \varnothing)\big)
+$$
+
+实践中把两份拼成一个 batch 一次前向，所以采样成本约翻倍，SD 默认 $w = 7.5$。SD 的 negative prompt 就是把 $\varnothing$ 换成不想要的内容的编码，外推方向从“远离无条件”变成“远离 negative prompt”（见 <Ref topic="cfg" to="step-5">CFG 第 5 步</Ref>）。
+
+</Detail>
+
+<Pitfall title="条件改的是输入，不是起点">
+
+inpainting 时起点仍然是 $z_T \sim \mathcal{N}(0, I)$。从原图加噪出发（做法 A）要么残留灰块、要么冲掉保留区；逐步替换（做法 B）只让模型看到加噪的上下文。把干净的条件拼进输入通道，模型每一步都能看到它。
+
+</Pitfall>
+
+<Quiz>
+
+SD 1.x 在 $32 \times 32$ 层做 cross-attention 时，$Q$、$K$、注意力矩阵分别是什么形状（单头，$d$ 为头维度）？
+
+<Answer>
+
+$N = 1024$，$M = 77$：$Q \in \mathbb{R}^{1024 \times d}$，$K \in \mathbb{R}^{77 \times d}$，注意力矩阵 $QK^\top \in \mathbb{R}^{1024 \times 77}$。
+
+</Answer>
+
+</Quiz>
+
+LDM 的部件都讲完了。最后把它们重新组装起来，看 DiT 保留了什么、换掉了什么。
+
+</Step>
+
+<Step id="step-6" n={6} title="从 LDM 到 DiT" gist="DiT 原样沿用 LDM 的 VAE、缩放系数、扩散过程和 CFG，只把 UNet 换成了 Transformer。">
+
+<KeyPoint>
+
+DiT = LDM 框架（SD 的 `kl-f8` VAE、$s = 0.18215$、DDPM 过程、类别条件 + CFG）**+ 把 UNet 换成 Transformer**：
+
+- patchify 取代卷积分词：$\mathbb{R}^{I \times I \times C} \to \mathbb{R}^{T \times d}$，$T = \left(\frac{I}{p}\right)^2$
+- 固定的 2D 正弦余弦位置编码取代卷积隐式提供的位置
+- $N$ 个同分辨率 Transformer block 取代多尺度 UNet
+- adaLN-Zero 取代 AdaGN 和 cross-attention
+
+</KeyPoint>
+
+<Detail>
+
+### DiT 原封不动保留的部分
+
+| 部件 | DiT 的选择 | 对应 |
+| --- | --- | --- |
+| autoencoder | SD 的预训练 VAE（`kl-f8`，冻结） | <Ref to="step-2">第 2 步</Ref> |
+| latent 形状 | $256 \times 256 \to 32 \times 32 \times 4$ | 第 2 步 |
+| 缩放系数 | $s = 0.18215$ | <Ref to="step-3">第 3 步</Ref> |
+| 扩散过程 | $T = 1000$，线性噪声调度，DDPM 公式 | <Ref to="step-4">第 4 步</Ref> |
+| 条件 | ImageNet 类别，训练时随机丢弃，采样用 CFG | <Ref to="step-5">第 5 步</Ref> |
+
+<Aside title="DiT 的输出是 8 个通道">
+
+DiT 沿用 Improved DDPM 的做法，同时预测噪声 $\epsilon$ 和方差 $\Sigma$，所以输出通道是 $2c = 8$：前 4 个用常规的 $\epsilon$ 损失，后 4 个用变分下界损失。
+
+</Aside>
+
+### DiT 替换的部分：去噪网络
+
+**patchify 取代卷积下采样。** 把 $I \times I \times C$ 的 latent 切成边长为 $p$ 的小块，每块展平后用线性层映射到隐藏维度 $d$，得到 $T = \left(\frac{I}{p}\right)^2$ 个 token。它等价于一个**卷积核大小和步长都是 $p$** 的卷积：核与核不重叠，每个核正好覆盖一个 patch，有 $d$ 个形状为 $p \times p \times C$ 的核。DiT 的代码里正是 `Conv2d(C, d, kernel_size=p, stride=p)`。
+
+<PatchifyDemo />
+
+**显式位置编码取代卷积提供的位置。** 第 4 步说过，UNet 不需要位置编码，因为卷积隐式提供了位置（<Ref to="flatten-attn">展平做注意力</Ref>）。DiT 在 patchify 之后去掉了所有卷积，必须显式加，用的是固定的 2D 正弦余弦编码，不参与训练。
+
+**同分辨率的 block 堆叠取代多尺度 UNet。** 没有下采样、上采样和 skip connection，就是 $N$ 个结构相同的 Transformer block 串联，token 数从头到尾不变。
+
+**adaLN-Zero 取代 AdaGN。** <Ref to="adagn">第 4 步的 AdaGN</Ref> 用时间嵌入生成 GroupNorm 后的缩放和偏移：$h \leftarrow \text{GroupNorm}(h) \cdot (1 + \gamma(\mathbf{e}_t)) + \beta(\mathbf{e}_t)$。DiT 把它搬到 LayerNorm 上，并把类别嵌入一起加进来，$\mathbf{c} = \mathbf{e}_t + \mathbf{e}_y$；每个 block 用 $\mathbf{c}$ 回归出 6 组参数：
+
+$$
+\begin{aligned}
+h &\leftarrow h + \alpha_1 \odot \text{Attn}\big(\text{LN}(h) \odot (1 + \gamma_1) + \beta_1\big) \\
+h &\leftarrow h + \alpha_2 \odot \text{FFN}\big(\text{LN}(h) \odot (1 + \gamma_2) + \beta_2\big)
+\end{aligned}
+$$
+
+“Zero” 指 $\alpha$ 的回归层初始化为零，训练开始时每个 block 的残差分支输出为零，整个 block 是恒等映射，这对训练稳定很重要。这里没有 cross-attention：类别条件只有一个 token（$M = 1$），用 adaLN 注入更便宜，效果也更好。DiT 论文比较了 in-context、cross-attention、adaLN 和 adaLN-Zero 四种方式，adaLN-Zero 效果最好、计算量最小。
+
+最后一个 block 之后，经过一次 adaptive LN 和线性层，每个 token 输出 $p \times p \times 2C$ 个值，按原位置拼回 $I \times I \times 2C$（unpatchify）。
+
+| | LDM / SD 的 UNet | DiT |
+| --- | --- | --- |
+| 输入 | $32 \times 32 \times 4$ latent | 同 |
+| 分词方式 | 无，卷积直接处理特征图 | patchify，$p \times p$ 一个 token |
+| 位置信息 | 卷积隐式提供 | 固定 2D 正弦余弦位置编码 |
+| 主体结构 | 多尺度卷积 + 部分层的注意力 + skip | $N$ 个同分辨率 Transformer block |
+| 时间步注入 | 加到特征上或 AdaGN | adaLN-Zero |
+| 类别 / 文本注入 | cross-attention（文本） | adaLN-Zero（类别），与时间嵌入相加 |
+| 输出 | $32 \times 32 \times 4$（$\epsilon$） | $32 \times 32 \times 8$（$\epsilon$ 和 $\Sigma$） |
+
+### 为什么换成 Transformer
+
+DiT 的核心论点是**可扩展性**：Transformer 的计算量可以用两个旋钮干净地控制，模型大小（S / B / L / XL）和 patch 大小 $p$（$p$ 减半，token 数变成 4 倍，计算量也约 4 倍）。论文发现生成质量（FID）与计算量（Gflops）高度相关，一路增大都在变好。DiT-XL/2 加 CFG 在 ImageNet $256 \times 256$ 类别条件生成上达到 FID 2.27，超过了当时所有基于 UNet 的扩散模型（<Ref topic="cfg" to="step-7">CFG 第 7 步</Ref>里有 DiT 不同 guidance scale 的实际样本）。这条“Transformer + latent 扩散 + 堆算力”的路线后来成为 SD3、FLUX、Sora 等模型的基础。
+
+</Detail>
+
+<Quiz>
+
+DiT-XL/2 和 DiT-XL/4 的模型参数几乎一样，计算量差多少？为什么？
+
+<Answer>
+
+约 4 倍。$p = 2$ 时 token 数 $T = 256$，$p = 4$ 时 $T = 64$；参数量由 block 结构决定，与 token 数无关，但每层的计算量随 $T$ 线性增长（注意力部分随 $T^2$ 增长）。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<section id="cheatsheet" className="kb-section">
+
+## 公式速查
+
+| 含义 | 公式 |
+| --- | --- |
+| 两阶段 | $x \xrightarrow{\mathcal{E}} z \xrightarrow{\times s} z_0 \to \cdots$；采样 $z_0 \xrightarrow{\div s} \xrightarrow{\mathcal{D}} \tilde x$ |
+| LDM 训练目标 | $\mathbb{E}_{z_0,\,y,\,\epsilon,\,t}\left[\|\epsilon - \epsilon_\theta(z_t, t, \tau_\theta(y))\|_2^2\right]$ |
+| latent 形状与压缩率 | $z \in \mathbb{R}^{\frac{H}{f} \times \frac{W}{f} \times c}$，压缩率 $\frac{3f^2}{c}$，下采样 $\log_2 f$ 次 |
+| autoencoder 损失 | $\|x - \tilde x\|_1 + w_p\,\text{LPIPS} - \lambda\,\mathcal{L}_{\text{adv}} + \beta\,D_{\text{KL}}$，$\beta \approx 10^{-6}$ |
+| GAN 自适应权重 | $\lambda = \frac{\|\nabla_{G_L}\mathcal{L}_{\text{rec}}\|}{\|\nabla_{G_L}\mathcal{L}_{\text{adv}}\| + \delta}$ |
+| 后验采样 | $z = \mu + \sigma \odot \epsilon$ |
+| 缩放系数 | $s = \frac{1}{\operatorname{std}(z)}$；SD 1.x 0.18215，SDXL 0.13025 |
+| VP 前向过程的方差 | $\operatorname{Var}(z_t) = \bar\alpha_t \operatorname{Var}(z_0) + 1 - \bar\alpha_t$ |
+| 信噪比 | $\text{SNR}(t) = \frac{\bar\alpha_t \operatorname{Var}(z_0)}{1 - \bar\alpha_t}$ |
+| 卷积参数量 | $k^2 C_{\text{in}} C_{\text{out}}$；$1 \times 1$：$y_{ij} = W h_{ij} + b$ |
+| AdaGN | $\text{GroupNorm}(h)\,(1 + \gamma(\mathbf{e}_t)) + \beta(\mathbf{e}_t)$ |
+| cross-attention | $Q = uW_Q$，$K = \tau_\theta(y)W_K$，$V = \tau_\theta(y)W_V$，矩阵 $N \times M$ |
+| inpainting 输入 | $[z_t;\ m;\ \mathcal{E}(x \odot (1 - m))]$，$4 + 1 + 4 = 9$ 通道 |
+| CFG | $\hat\epsilon = \epsilon_\varnothing + w\,(\epsilon_y - \epsilon_\varnothing)$，SD 默认 $w = 7.5$ |
+| patchify | $T = \left(\frac{I}{p}\right)^2$，每个 patch $p^2 C$ 维 |
+| adaLN-Zero | $h \leftarrow h + \alpha \odot \text{Attn}(\text{LN}(h)(1 + \gamma) + \beta)$，$\alpha$ 初始化为 0 |
+
+</section>
+
+<section id="pitfalls" className="kb-section">
+
+## 易错点
+
+1. ✗ LDM 的 encoder 就是 VAE → ✓ 只对 KL 版本成立，而且它借用了 VAE 的形式：$\beta \approx 10^{-6}$，是压缩器而不是生成器。
+2. ✗ 重建误差是质量的下限 → ✓ 重建误差是**误差**下限，重建质量是生成质量的**上限**。
+3. ✗ 从后验采样是额外的一步大操作 → ✓ 就是 $z = \mu + \sigma \odot \epsilon$，$\sigma$ 约 0.0005，几乎等于取 $\mu$。
+4. ✗ $c$ 越大越好，没有代价 → ✓ $c$ 越大重建越好，但 latent 信息更多，扩散模型更难学，往往需要更大的模型。
+5. ✗ 512 到 4 的通道压缩分布在整个 encoder 里 → ✓ 只发生在末尾一个 `conv_out`（512 → 8，均值和对数方差各 4 个）。
+6. ✗ 要缩放是因为 DDPM 要求数据服从正态 → ✓ 要求的是 $z_T$ 近似正态；问题在方差偏离 1，缩放只调尺度。
+7. ✗ 像素空间不用缩放，因为图像近似正态 → ✓ 像素也做了缩放（$\frac{x}{127.5} - 1$），只是系数事先知道。
+8. ✗ $s$ 是推导出来的常数 → ✓ 是在数据上统计的经验值，换 VAE 就要重算（SDXL 为 0.13025）。
+9. ✗ 两阶段完全解耦 → ✓ 依赖单向：扩散模型绑定 encoder 的 latent 空间；只换 decoder 可以。
+10. ✗ $1 \times 1$ 卷积每个输入通道有一个核 → ✓ 每个**输出**通道一个核，形状 $1 \times 1 \times C_{\text{in}}$；每个输入通道单独一个核的是 depthwise 卷积。
+11. ✗ 卷积的通道混合是对各通道结果取平均 → ✓ 是可学习的加权**求和**。
+12. ✗ SD 的注意力直接对原始 latent 做，需要位置编码 → ✓ 对 UNet 中间特征图做，位置信息由卷积隐式提供。
+13. ✗ inpainting 直接从原图加噪出发约束更强 → ✓ 要么残留灰块、要么冲掉保留区；逐步替换只能看到加噪的上下文；拼接干净条件效果最好。
+14. ✗ $M$ 就是 prompt 的长度 → ✓ $M$ 是条件编码器输出的 token 数，SD 恒为 77（补齐或截断）。
+15. ✗ SD 的空条件是全零向量 → ✓ 是空字符串经 CLIP 编码的结果。
+
+</section>
+
+<section id="flashcards" className="kb-section">
+
+## 自测卡片
+
+点击卡片翻面，勾选“已掌握”后会记在浏览器里，下次可以只看没掌握的。
+
+<Flashcards topic="ldm">
+
+<Card id="why-latent">
+<Front>像素空间扩散贵在哪三处？LDM 怎么解决？</Front>
+<Back>训练每步全分辨率、采样串行很多步、注意力随 token 数平方增长。先用 autoencoder 做感知压缩，扩散只在低维 latent 上做语义生成。</Back>
+</Card>
+
+<Card id="perceptual-semantic">
+<Front>感知压缩和语义压缩分别指什么？LDM 把它们分给谁？</Front>
+<Back>感知压缩丢掉人眼看不出的高频细节，失真几乎不变，交给 autoencoder；语义压缩开始丢构图和物体，是生成真正难的部分，交给扩散模型。</Back>
+</Card>
+
+<Card id="compression-ratio">
+<Front>$f = 8$、$c = 4$ 时压缩率是多少？$256^2$ 图的 latent 和注意力节省多少？</Front>
+<Back>$\frac{3f^2}{c} = 48$；$32 \times 32 \times 4$；token 少 64 倍，注意力矩阵小 4096 倍。</Back>
+</Card>
+
+<Card id="why-mild-f">
+<Front>为什么 LDM 只需要 $f = 4 \sim 16$ 的温和压缩，而 VQGAN + 自回归需要更狠？</Front>
+<Back>自回归把图像当一维序列，没有空间归纳偏置，只能靠压短序列；UNet 有卷积的空间归纳偏置，能直接处理二维 latent。压太狠会锁死重建质量。</Back>
+</Card>
+
+<Card id="ae-loss">
+<Front>LDM autoencoder 的损失有哪几部分，各解决什么问题？</Front>
+<Back>L1（颜色结构）+ LPIPS（感知清晰，避免模糊）+ patch GAN（局部纹理真实）+ 极弱的 KL 或 VQ（只限制 latent 尺度）。</Back>
+</Card>
+
+<Card id="vs-vae">
+<Front>LDM 的 autoencoder 和标准 VAE 有哪些区别？</Front>
+<Back>$\beta \approx 10^{-6}$ 而非 1；latent 不接近 $\mathcal{N}(0, I)$；重建用 L1 + LPIPS + GAN；latent 是二维特征图；本身不是生成模型。</Back>
+</Card>
+
+<Card id="bottleneck">
+<Front>SD VAE 的 encoder 在哪里把通道压到 4？之后还有什么？</Front>
+<Back>末尾的 `conv_out`（$3 \times 3$，512 → 8），再过 `quant_conv`（$1 \times 1$，8 → 8），切成 $\mu$ 和 $\log\sigma^2$ 各 4 个通道，重参数化得到 $z$。</Back>
+</Card>
+
+<Card id="recon-ceiling">
+<Front>为什么说重建质量是生成质量的上限？</Front>
+<Back>输出一定是 $\mathcal{D}(z_0)$；即使扩散模型完美学到 latent 分布，结果最好也只是 $\mathcal{D}(\mathcal{E}(x))$，decoder 画不出它重建时都还原不了的细节。</Back>
+</Card>
+
+<Card id="f-vs-c">
+<Front>$f$ 和 $c$ 分别控制什么？后来的模型怎么调？</Front>
+<Back>$f$ 控制空间分辨率，决定扩散的计算量；$c$ 控制每个位置的信息量，决定重建质量。SD3 / FLUX 保持 $f = 8$，把 $c$ 提到 16。</Back>
+</Card>
+
+<Card id="scale-factor">
+<Front>缩放系数 $s$ 怎么算？SD 1.x 的值是多少？</Front>
+<Back>$s = \frac{1}{\operatorname{std}(z)}$，在训练数据上统计；SD 1.x 的 $\operatorname{std}(z) \approx 5.49$，$s \approx 0.18215$。</Back>
+</Card>
+
+<Card id="scale-why">
+<Front>不缩放会破坏前向过程的哪两件事？</Front>
+<Back>$z_T$ 不再是纯噪声（残留信号 0.37，缩放后 0.068）；所有时间步的 SNR 被放大约 30 倍，调度错位，大量步骤几乎没加噪。</Back>
+</Card>
+
+<Card id="scale-shape">
+<Front>缩放后的 latent 服从标准正态吗？需要吗？</Front>
+<Back>不服从，也不需要。缩放是一个全局标量，只调尺度不改形状；扩散只要求 $z_T$ 近似正态。</Back>
+</Card>
+
+<Card id="pixel-scale">
+<Front>像素空间扩散为什么不用统计缩放系数？</Front>
+<Back>像素范围固定已知，用 $\frac{x}{127.5} - 1$ 归一化就是一次已知系数的缩放；latent 没有预设范围，只能统计。</Back>
+</Card>
+
+<Card id="ldm-train">
+<Front>LDM 训练一步比 DDPM 多了什么？为什么能提前离线做？</Front>
+<Back>多一次编码 $z_0 = s \cdot \mathcal{E}(x)$。encoder 冻结，可以提前把整个数据集编码成 latent 存盘。</Back>
+</Card>
+
+<Card id="decoder-once">
+<Front>LDM 采样时 decoder 调用几次？采样成本落在哪里？</Front>
+<Back>只在最后调用一次 $\mathcal{D}(\frac{z_0}{s})$；几十到上千次去噪都在 latent 空间里，所以采样快。</Back>
+</Card>
+
+<Card id="one-way">
+<Front>为什么 SD 的 ft-MSE VAE 可以直接替换而不用重训 UNet？</Front>
+<Back>它只微调了 decoder，encoder 不变，latent 空间不变。扩散模型绑定的是 encoder 定义的 latent 空间。</Back>
+</Card>
+
+<Card id="adagn">
+<Front>ADM 的 AdaGN 怎么注入时间步？它在 DiT 里对应什么？</Front>
+<Back>$\text{GroupNorm}(h)\,(1 + \gamma(\mathbf{e}_t)) + \beta(\mathbf{e}_t)$；对应 DiT 的 adaLN（-Zero）。</Back>
+</Card>
+
+<Card id="sd-attn">
+<Front>SD 的 `SpatialTransformer` 怎么做 self-attention？</Front>
+<Back>GroupNorm + `proj_in`（$1 \times 1$），把 $H' \times W' \times C$ 特征图展平成 $N = H'W'$ 个 token，过 self-attn、cross-attn、FFN（各带残差），reshape 回去，`proj_out`，再加外层残差。不加位置编码。</Back>
+</Card>
+
+<Card id="conv1x1">
+<Front>为什么 $1 \times 1$ 卷积等价于逐位置的线性层？参数量是多少？</Front>
+<Back>每个位置只看自己：$y_{ij} = W h_{ij} + b$，所有位置共用 $W \in \mathbb{R}^{C_{\text{out}} \times C_{\text{in}}}$，就是 `nn.Linear`。参数量 $C_{\text{in}} C_{\text{out}}$（加 $C_{\text{out}}$ 个偏置）。</Back>
+</Card>
+
+<Card id="depthwise">
+<Front>普通卷积和 depthwise 卷积的区别在哪一步？</Front>
+<Back>两者都让每片核在对应输入通道上卷积；普通卷积再跨通道求和得到一个输出通道，depthwise 不求和，通道互不影响。</Back>
+</Card>
+
+<Card id="inpaint-9ch">
+<Front>SD inpainting 模型的 9 个输入通道是什么？为什么要单独给遮罩？</Front>
+<Back>$z_t$（4）+ 遮罩（1）+ 被遮挡图像的 latent（4）。只看被遮挡图分不清“被挖掉”还是“本来是灰色”，VAE 编码后边界也会模糊。</Back>
+</Card>
+
+<Card id="inpaint-methods">
+<Front>inpainting 的三种做法各有什么问题？</Front>
+<Back>从条件加噪出发：灰块残留或保留区被冲掉；逐步替换：只看到加噪的上下文，高噪声时定下的结构和周围不协调；拼接：需要专门训练，保留区是软约束（解码后贴回原图）。</Back>
+</Card>
+
+<Card id="cross-attn">
+<Front>cross-attention 中 $Q, K, V$ 分别来自哪里？SD 1.x 最高分辨率层的注意力矩阵多大？</Front>
+<Back>$Q$ 来自图像 token，$K, V$ 来自 $\tau_\theta(y)$；$4096 \times 77$。</Back>
+</Card>
+
+<Card id="sd-null">
+<Front>SD 训练时的空条件 $\varnothing$ 是什么？negative prompt 改了哪里？</Front>
+<Back>空字符串经 CLIP 编码的结果；negative prompt 把 CFG 公式里的 $\epsilon_\varnothing$ 换成不想要内容的预测。</Back>
+</Card>
+
+<Card id="dit-keeps">
+<Front>DiT 从 LDM 保留了什么，换掉了什么？</Front>
+<Back>保留 SD 的 VAE、$s = 0.18215$、DDPM 过程、类别条件 + CFG；只把 UNet 换成 Transformer：patchify、2D 正弦余弦位置编码、同分辨率 block、adaLN-Zero。</Back>
+</Card>
+
+<Card id="patchify">
+<Front>$32 \times 32 \times 4$ 的 latent，$p = 2$ 时有多少 token？patchify 等价于什么？</Front>
+<Back>$T = 256$，每个 patch 16 维；等价于 `Conv2d(4, d, kernel_size=p, stride=p)`。</Back>
+</Card>
+
+</Flashcards>
+
+</section>

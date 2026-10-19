@@ -4,7 +4,7 @@
 基于 Vite + React + MDX 的个人学习知识库。每个学习主题一个页面，页面里有讲解、交互演示和复习工具。
 
 ## 目录结构
-- `CFG/`：原始学习对话记录（只读资料）
+- `CFG/`、`LDM/`：原始学习对话记录（只读资料，不发布）
 - `src/app/`：路由、整体布局、首页
 - `src/kb/`：与主题无关的共用组件和状态（复习模式、要点框、测验、卡片、演示外框）
 - `src/topics/registry.ts`：主题注册表
@@ -44,7 +44,8 @@ Vite 8、React 19、TypeScript 5.9、MDX 3、KaTeX、Shiki、react-router 7（Ha
 | `Flashcards` + `Card`/`Front`/`Back` | 自测卡片 | 显示 |
 | `Roadmap` | 步骤路线图 | 显示 |
 
-演示组件（需在 MDX 中 import）里使用 `Demo`、`Slider`、`Tex`、`SvgSub`（`Sub`、`SvgTex`）。
+演示组件（需在 MDX 中 import）里使用 `Demo`（`schematic` 标“示意”角标，`note` 写底部说明）、`Seg`（分段按钮）、`Slider`、`Tex`、`SvgSub`（`Sub`、`SvgTex`）。图片条用 `.kb-strip` + `.kb-tag`（左上角叠字标签）；宽 SVG 外面包 `.kb-svg-scroll`，手机上在框内横向滚动。演示要用的实测数据可以放在专题的 `lib/*.json` 里直接 import。
+`Roadmap` 的 `legend` 参数可以覆盖图例文字（默认是 CFG 的分类）。
 
 ## localStorage 键
 - `kb:reviewMode`：是否处于复习模式

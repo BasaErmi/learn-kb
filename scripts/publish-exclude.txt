@@ -7,3 +7,4 @@ CFG/
 .DS_Store
 .claude/
 *学习对话记录.md
+LDM/

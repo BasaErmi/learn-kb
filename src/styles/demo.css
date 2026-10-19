@@ -88,3 +88,26 @@
 .kb-flow-code .tok-str { color: #032f62; }
 .kb-flow-code .tok-num { color: #005cc5; }
 .kb-flow-code .tok-com { color: #6a737d; }
+
+/* 分段按钮、示意角标、底部说明（借鉴 OpenWAM 交互页） */
+.kb-segctl { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--paper); align-self: flex-start; }
+.kb-segctl button { border-radius: 0; font: inherit; font-size: 0.82rem; padding: 0.32rem 0.85rem; border: 0; border-right: 1px solid var(--rule); background: transparent; color: var(--ink-2); cursor: pointer; transition: background .15s, color .15s; }
+.kb-segctl button:last-child { border-right: 0; }
+.kb-segctl button:hover { background: var(--paper-2); }
+.kb-segctl button[aria-pressed="true"] { background: var(--ink); color: var(--card); }
+.kb-segctl button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kb-controls { display: flex; flex-wrap: wrap; gap: 0.6rem 0.9rem; align-items: center; }
+.kb-schematic { font-family: var(--mono); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.12em; color: var(--ink-3); border: 1px solid var(--ink-3); border-radius: 3px; padding: 0.02rem 0.35rem; margin-left: 0.55rem; vertical-align: 2px; }
+.kb-demo-foot { margin: 1rem 0 0; padding-top: 0.7rem; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 0.78rem; line-height: 1.6; }
+.kb-demo-foot b { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; color: var(--ink-2); margin-right: 0.5rem; }
+
+/* 图片条：左上角叠字标签 */
+.kb-strip { display: grid; gap: 0.45rem; }
+.kb-strip figure { margin: 0; position: relative; }
+.kb-strip img, .kb-strip canvas { width: 100%; display: block; border-radius: 4px; border: 1px solid var(--rule); background: var(--paper-2); }
+.kb-strip figure.is-hot img, .kb-strip figure.is-hot canvas { outline: 2px solid var(--accent); outline-offset: 1px; }
+.kb-tag { position: absolute; left: 6px; top: 6px; font-family: var(--mono); font-size: 0.68rem; line-height: 1.4; color: #fff; background: rgb(20 18 14 / 72%); padding: 0.05rem 0.4rem; border-radius: 3px; pointer-events: none; }
+.kb-strip figcaption { font-size: 0.74rem; color: var(--ink-3); text-align: center; margin-top: 0.25rem; }
+/* 窄屏时宽 SVG 保持可读宽度，在演示框内横向滚动 */
+.kb-svg-scroll { overflow-x: auto; }
+@media (max-width: 600px) { .kb-svg-scroll > svg { min-width: 560px; } }

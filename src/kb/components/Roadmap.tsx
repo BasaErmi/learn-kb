@@ -4,7 +4,10 @@ export interface RoadNode { id: string; label: string; sub: string; kind: 'goal'
 
 const KIND: Record<RoadNode['kind'], string> = { goal: '动机', basis: '扩散基础', pre: '前身', core: 'CFG 本身' }
 
-export function Roadmap({ nodes }: { nodes: RoadNode[] }) {
+/** legend 覆盖图例文字；只列出 nodes 里实际用到的类型 */
+export function Roadmap({ nodes, legend }: { nodes: RoadNode[]; legend?: Partial<Record<RoadNode['kind'], string>> }) {
+  const labels = { ...KIND, ...legend }
+  const used = (Object.keys(KIND) as RoadNode['kind'][]).filter((k) => nodes.some((n) => n.kind === k))
   return (
     <div className="kb-roadmap">
       <ol>
@@ -19,8 +22,8 @@ export function Roadmap({ nodes }: { nodes: RoadNode[] }) {
         ))}
       </ol>
       <div className="kb-road-legend">
-        {(Object.keys(KIND) as RoadNode['kind'][]).map((k) => (
-          <span key={k} className={`kind-${k}`}><i aria-hidden />{KIND[k]}</span>
+        {used.map((k) => (
+          <span key={k} className={`kind-${k}`}><i aria-hidden />{labels[k]}</span>
         ))}
       </div>
     </div>

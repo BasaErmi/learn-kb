@@ -12,7 +12,9 @@ const CS = [3, 4, 8, 16]
 function Grids({ f, c }: { f: number; c: number }) {
   const side = 200, px = side / 32
   const lat = Math.max(1, 32 / f) // 这块区域对应的 latent 边长（f = 32 时只有 1 个位置）
-  const layers = Math.min(c, 16), sz = 150, gap = 4
+  const layers = Math.min(c, 16), sz = 150, gap = layers > 8 ? 3 : 4
+  const span = sz + (layers - 1) * gap // 整摞的外框边长，按它居中
+  const x0 = 330 + (side - span) / 2, y0 = 10 + (side - span) / 2
   return (
     <div className="kb-svg-scroll">
       <svg viewBox="0 0 600 250" className="kb-chart" role="img" aria-label={`像素与 latent 网格对比，f=${f}，c=${c}`}>
@@ -33,7 +35,7 @@ function Grids({ f, c }: { f: number; c: number }) {
         </g>
         <line x1={245} x2={300} y1={110} y2={110} className="axis" />
         <SvgTex x={272} y={104} w={40} align="middle" size={14}><Tex>{'\\mathcal{E}'}</Tex></SvgTex>
-        <g transform={`translate(${330 + (layers - 1) * gap},${10 + (side - sz) / 2})`}>
+        <g transform={`translate(${x0 + (layers - 1) * gap},${y0 + (layers - 1) * gap})`}>
           {Array.from({ length: layers }, (_, k) => {
             const o = -(layers - 1 - k) * gap
             const front = k === layers - 1

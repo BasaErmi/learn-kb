@@ -1,5 +1,8 @@
 # 变更日志
 
+## [2026-10-19] - Fixed
+- 压缩演示右侧的 latent 叠层图在 $c = 16$ 时向左上超出画布：原来按最前一层定位，层数多时整摞往外偏。改为按整摞的外框居中，层数多于 8 时缩小层间距。相关文件：`src/topics/ldm/demos/CompressionDemo.tsx`。
+
 ## [2026-10-19] - Changed
 - LDM 第 1 步：删除「为什么不压得更狠」一节（VQGAN + 自回归的对比和 $f$ 的取舍实验），同时删除对应的自测卡片 `why-mild-f`；本步小结表保留。压缩演示只保留 32×32 局部网格，去掉输入分辨率选项和数值表，$f$、$c$ 两组按钮并排，下方只显示下采样次数和压缩率。窄屏下分段按钮内边距缩小，6 个选项能排在一行。相关文件：`src/topics/ldm/index.mdx`、`src/topics/ldm/demos/CompressionDemo.tsx`、`src/styles/demo.css`、`tests/e2e/ldm.spec.ts`。
 

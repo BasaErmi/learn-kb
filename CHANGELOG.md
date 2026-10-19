@@ -1,6 +1,9 @@
 # 变更日志
 
 ## [2026-10-19] - Fixed
+- LDM 第 1 步「率失真（rate-distortion）」显示成带星号的原文：CommonMark 规定结尾的 `**` 前是标点、后面紧跟汉字时不算加粗。改为把括号移到加粗外面。两个专题已全部扫描，只有这一处；skill 的 MDX 注意事项补充了这条。相关文件：`src/topics/ldm/index.mdx`。
+
+## [2026-10-19] - Fixed
 - 路线图节点、步骤标题、一句话结论（gist）和目录里的公式原来按纯文本显示（如“让 z_T 仍是纯噪声”），现在 `Roadmap`、`Step`、`TopicToc` 都支持 `$...$` 并用 KaTeX 渲染。LDM 和 CFG 中相应的文字改成了公式。相关文件：`src/kb/components/Roadmap.tsx`、`Step.tsx`、`TopicToc.tsx`、`src/topics/ldm/`、`src/topics/cfg/index.mdx`。
 
 ## [2026-10-19] - Added

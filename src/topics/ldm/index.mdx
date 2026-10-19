@@ -92,7 +92,7 @@ DDPM 的网络 $\epsilon_\theta(x_t, t)$ 直接作用在图像 $x \in \mathbb{R}
 
 ### 大部分比特是看不出来的细节
 
-论文从**率失真（rate-distortion）**的角度看这个问题。把一张图压缩到越来越低的码率，失真的变化分成两段：
+论文从**率失真**（rate-distortion）的角度看这个问题。把一张图压缩到越来越低的码率，失真的变化分成两段：
 
 - **感知压缩（perceptual compression）**：先丢掉大量比特，但丢的只是高频纹理这类人眼几乎察觉不到的细节。
 - **语义压缩（semantic compression）**：码率继续降低，才开始真正丢失语义和构图。

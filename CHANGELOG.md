@@ -1,5 +1,8 @@
 # 变更日志
 
+## [2026-10-27] - Added
+- Softmax 第 1 步“网络输出的是 logits”加了一张嵌入示意图：猫的图片 → 特征 $h$ → 线性层 $z = Wh + b$ → 5 个类别各一个 logit。数值就是正文例子里的 $z = (2, 1, 0.5, -0.5, -1.5)$，负值标橙，并注明和为 1.5、还不是概率。相关文件：`src/topics/softmax/demos/LogitsFigure.tsx`、`src/topics/softmax/index.mdx`。
+
 ## [2026-10-27] - Changed
 - 首页大标题改为“Guanlin 的知识库”，删掉标题下的导语和分隔横线，标签筛选上移到标题下方。相关文件：`src/app/HomePage.tsx`、`src/styles/base.css`。
 

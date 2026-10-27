@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { MDXProvider } from '@mdx-js/react'
-import { findTopic, type Topic } from '@/topics/registry'
+import { findTopic, usedBy, type Topic } from '@/topics/registry'
+import { findArea } from '@/topics/taxonomy'
+import { TexText } from '@/kb/components/Tex'
 import { TopicToc } from '@/kb/components/TopicToc'
 import { mdxComponents } from '@/kb/mdx-components'
 import { BackToReading, JumpProvider } from '@/kb/jump'
@@ -14,6 +16,35 @@ function contentOf(topic: Topic) {
   let c = contentCache.get(topic.slug)
   if (!c) contentCache.set(topic.slug, (c = lazy(topic.load)))
   return c
+}
+
+/** 页头：所在领域（面包屑）、标签、前置与后续专题 */
+function TopicHead({ topic }: { topic: Topic }) {
+  const place = findArea(topic.area)
+  const pre = (topic.prereqs ?? []).map(findTopic).filter((t): t is Topic => !!t)
+  const next = usedBy(topic.slug)
+  const links = (ts: Topic[]) => ts.map((t, i) => <span key={t.slug}>{i > 0 && '、'}<Link to={`/t/${t.slug}`}>{t.title}</Link></span>)
+  return (
+    <header className="kb-topic-head">
+      {place && (
+        <nav className="kb-crumbs" aria-label="所在领域">
+          <Link to={`/?area=${place.area.id}`}>{place.area.title}</Link>
+          <span aria-hidden> › </span>
+          <Link to={`/?area=${topic.area}`}>{place.sub.title}</Link>
+        </nav>
+      )}
+      <h1>{topic.title}</h1>
+      <p className="kb-lede"><TexText>{topic.summary}</TexText></p>
+      <dl className="kb-topic-rel">
+        <div>
+          <dt>标签</dt>
+          <dd>{topic.tags.map((tag) => <Link key={tag} className="kb-tag-link" to={`/?tag=${encodeURIComponent(tag)}`}>#{tag}</Link>)}</dd>
+        </div>
+        {pre.length > 0 && <div><dt>建议先读</dt><dd>{links(pre)}</dd></div>}
+        {next.length > 0 && <div><dt>被这些专题用到</dt><dd>{links(next)}</dd></div>}
+      </dl>
+    </header>
+  )
 }
 
 export function TopicPage() {
@@ -35,11 +66,7 @@ export function TopicPage() {
           <TopicToc steps={topic.steps} />
         </aside>
         <article className="kb-prose">
-          <header className="kb-topic-head">
-            <p className="kb-eyebrow">{topic.tags.join(' · ')}</p>
-            <h1>{topic.title}</h1>
-            <p className="kb-lede">{topic.summary}</p>
-          </header>
+          <TopicHead topic={topic} />
           <MDXProvider components={mdxComponents}>
             <Content />
           </MDXProvider>

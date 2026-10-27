@@ -10,7 +10,8 @@ function collectErrors(page: Page) {
 test('home lists the CFG topic and opens it', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./#/')
-  await page.getByRole('link', { name: /Classifier-Free Guidance/ }).click()
+  // 卡片标题；LDM 卡片的“建议先读”里也有这个名字，所以按标题找
+  await page.getByRole('heading', { name: 'Classifier-Free Guidance', exact: true }).click()
   await expect(page).toHaveURL(/#\/t\/cfg$/)
   await expect(page.getByRole('heading', { level: 1, name: 'Classifier-Free Guidance' })).toBeVisible()
   expect(errors).toEqual([])
@@ -163,7 +164,7 @@ test('toc read progress resets on each visit', async ({ page }) => {
 
 test('home shows mastered flashcard count', async ({ page }) => {
   await page.goto('./#/')
-  const meta = page.getByRole('link', { name: /Classifier-Free Guidance/ }).locator('.kb-card-meta')
+  const meta = page.locator('a[href="#/t/cfg"] .kb-card-meta')
   await expect(meta).not.toContainText('已掌握')
   await page.evaluate(() => localStorage.setItem('kb:cfg:mastered', JSON.stringify(['a', 'b'])))
   await page.reload()
@@ -205,7 +206,7 @@ test('wrong-shape localStorage values do not blank the page', async ({ page }) =
       localStorage.setItem('kb:reviewMode', v)
     }, bad)
     await page.reload()
-    await expect(page.getByRole('link', { name: /Classifier-Free Guidance/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Classifier-Free Guidance', exact: true })).toBeVisible()
     await page.goto('./#/t/cfg')
     await expect(page.getByRole('heading', { level: 1, name: 'Classifier-Free Guidance' })).toBeVisible()
     await expect(page.locator('[data-card="s-values"]')).toBeVisible()

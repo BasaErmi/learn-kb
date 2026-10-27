@@ -4,7 +4,9 @@ export const meta: TopicMeta = {
   slug: 'ldm',
   title: 'Latent Diffusion Model',
   summary: '先用 autoencoder 把图像压到感知上等价的低维 latent，再在 latent 上做标准扩散：前者负责高频细节，后者负责语义和结构。',
-  tags: ['扩散模型', '图像生成', 'Stable Diffusion'],
+  area: 'generative/diffusion',
+  tags: ['图像生成', '条件生成', '注意力', 'Stable Diffusion'],
+  prereqs: ['cfg', 'softmax'],
   updated: '2026-10-19',
   steps: [
     { id: 'overview', title: '总览与记号' },

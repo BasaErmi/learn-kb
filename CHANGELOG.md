@@ -1,5 +1,15 @@
 # 变更日志
 
+## [2026-10-27] - Added
+- 新专题「Softmax」（`softmax`），6 步：从 logits 到概率 → 温度（为什么叫 soft max）→ 平移不变与数值稳定 → Jacobian → 接上交叉熵：$p - y$ → 饱和与注意力里的 $\sqrt{d_k}$；概率解释（指数族、最大熵）作为第 2 步末尾的旁注。7 个交互演示：可拖动的 $z \to e^{z} \to p$ 三行柱状图（可对比“直接除以总和”）、温度滑块（分布、熵曲线、按分布抽 100 次）、float32 下朴素实现与减最大值的溢出对比、$J = \text{diag}(p) - pp^\top$ 热力图（点格子看代入过程和数值差分）、交叉熵梯度与逐步梯度下降、logit 尺度与饱和（$\|J\|_F$ 对比 $\|p - y\|$）、注意力缩放（不同 $d_k$ 下缩放与不缩放）；另有一张 LSE 与 max、$\sigma$ 与 argmax 的对照图。计算在 `src/topics/softmax/lib/softmax.ts`（24 个单元测试，含数值差分校验）；新增 `tests/e2e/softmax.spec.ts`（13 个测试，含与 CFG 的跨专题链接往返）。对话记录放在 `Softmax/`，已加入发布排除列表。相关文件：`src/topics/softmax/`、`src/styles/demo.css`、`src/styles/tokens.css`（新增 `--c-prob`、`--c-exp`、`--c-grad` 三个角色色，复用已校验的颜色）。
+- 知识库分类：领域树（`src/topics/taxonomy.ts`，领域 › 子领域）+ 跨领域标签 + 前置关系。`TopicMeta` 新增 `area`、`prereqs`；首页按领域分组，顶部可按标签筛选（`#/?tag=…`、`#/?area=…`）；专题页头显示面包屑、标签链接、“建议先读”和“被这些专题用到”；首页卡片显示步数和建议先读。summary 支持 `$...$`。决策记录见 `docs/ADR/ADR-003-知识库按领域树加标签和前置关系组织.md`。相关文件：`src/app/HomePage.tsx`、`src/app/TopicPage.tsx`、`src/topics/registry.ts`、`src/styles/base.css`。
+
+## [2026-10-27] - Changed
+- CFG、LDM 归入“生成模型 › 扩散模型”，标签去掉领域名，改为跨领域关键词（CFG：条件生成、采样；LDM：图像生成、条件生成、注意力、Stable Diffusion）。CFG 前置 Softmax，LDM 前置 CFG 和 Softmax。
+- 跨专题链接：CFG 第 1 步的 temperature 类比、第 3 步检验题里的“softmax 饱和”，以及 LDM 第 4 步 self-attention 的 $\sqrt{d_k}$，都链到 Softmax 对应的步骤。相关文件：`src/topics/cfg/index.mdx`、`src/topics/ldm/index.mdx`。
+- e2e 测试里定位首页卡片改为按标题找：卡片里的“建议先读”也会出现其他专题名。相关文件：`tests/e2e/kb.spec.ts`、`tests/e2e/ldm.spec.ts`。
+- skill `learn-topic-page` 的“搭骨架”一步补充了 `area`、`tags`、`prereqs` 的填写规则。
+
 ## [2026-10-19] - Fixed
 - 压缩演示右侧的 latent 叠层图在 $c = 16$ 时向左上超出画布：原来按最前一层定位，层数多时整摞往外偏。改为按整摞的外框居中，层数多于 8 时缩小层间距。相关文件：`src/topics/ldm/demos/CompressionDemo.tsx`。
 

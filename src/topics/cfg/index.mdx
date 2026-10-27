@@ -145,7 +145,7 @@ $$
 \frac{\tilde p(x_A \mid y)}{\tilde p(x_B \mid y)} = \frac{p(x_A)}{p(x_B)}\left(\frac{p(y \mid x_A)}{p(y \mid x_B)}\right)^{s}
 $$
 
-原来的比值被 $s$ 次方放大，这就是“锐化”。和 temperature 同理：softmax 除以小于 1 的 $T$，等价于把每个概率做 $\frac{1}{T}$ 次方再归一化。
+原来的比值被 $s$ 次方放大，这就是“锐化”。和 temperature 同理（见 <Ref topic="softmax" to="step-2">Softmax 第 2 步</Ref>）：softmax 除以小于 1 的 $T$，等价于把每个概率做 $\frac{1}{T}$ 次方再归一化。
 
 $Z$ 通常算不出来（要对所有图像积分），但扩散模型采样只用到对数密度的**梯度**，而 $Z$ 与 $x$ 无关，求梯度直接消失：
 
@@ -435,7 +435,7 @@ $$
 
 <Answer>
 
-$\log p_\phi \to 0$，而且 softmax 饱和后对输入几乎不敏感，梯度趋近 0，于是 $\hat\epsilon \approx \epsilon_\theta(x_t, t)$，这一步基本退化成无条件预测。
+$\log p_\phi \to 0$，而且 softmax <Ref topic="softmax" to="step-6">饱和</Ref>后对输入几乎不敏感，梯度趋近 0，于是 $\hat\epsilon \approx \epsilon_\theta(x_t, t)$，这一步基本退化成无条件预测。
 
 推论：在**极高**噪声时 $p_t(y \mid x_t)$ 接近常数，梯度也很小；梯度最大的是中间那段，图像刚开始显露结构、分类器又还不确定的时候（下面的曲线）。另外，分类器一旦“被说服”就不再推，哪怕它是被对抗式扰动骗到的，这一点和下面要讲的缺点 2 有关。
 

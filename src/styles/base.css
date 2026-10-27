@@ -37,10 +37,34 @@ a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness:
 .kb-topic-card::after { content: "→"; position: absolute; right: 1.4rem; bottom: 1.1rem; color: var(--accent); font-family: var(--sans); transition: transform .2s; }
 .kb-topic-card:hover { transform: translateY(-3px); border-color: var(--accent); }
 .kb-topic-card:hover::after { transform: translateX(4px); }
-.kb-topic-card h2 { font-family: var(--display); font-weight: 600; margin: 0.35rem 0 0.5rem; font-size: 1.55rem; line-height: 1.2; font-variation-settings: "opsz" 48; }
+.kb-topic-card h4 { font-family: var(--display); font-weight: 600; margin: 0.35rem 0 0.5rem; font-size: 1.55rem; line-height: 1.2; font-variation-settings: "opsz" 48; }
 .kb-topic-card p { flex: 1; margin: 0 0 1rem; color: var(--ink-2); font-size: 0.95rem; line-height: 1.75; }
 .kb-card-meta, .kb-eyebrow { font-family: var(--sans); font-size: 0.74rem; color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase; }
 .kb-lede { color: var(--ink-2); font-size: 1.08rem; max-width: 40rem; margin: 0; }
+/* 首页：标签筛选 + 领域 › 子领域分组 */
+.kb-filter { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; margin: -0.8rem 0 0.5rem; }
+.kb-filter .kb-chip small { margin-left: 0.35rem; font-size: 0.68rem; opacity: 0.6; }
+.kb-area { padding-top: 2.2rem; }
+.kb-area > h2 { font-family: var(--display); font-size: 1.9rem; font-weight: 600; line-height: 1.2; margin: 0 0 0.2rem; font-variation-settings: "opsz" 72; }
+.kb-subarea { margin-top: 1rem; }
+.kb-subarea > h3 { display: flex; align-items: baseline; gap: 0.6rem; font-family: var(--sans); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.1em; color: var(--accent); margin: 0 0 0.8rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule); }
+.kb-subarea > h3 span { color: var(--ink-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+.kb-eyebrow { text-transform: none; letter-spacing: 0.04em; white-space: pre-wrap; }
+/* 卡片底部写的是专题名（建议先读），不转大写；右边给箭头留位置 */
+.kb-topic-card .kb-card-meta { text-transform: none; letter-spacing: 0.04em; padding-right: 1.8rem; }
+
+/* 专题页头：面包屑、标签、前置 */
+.kb-crumbs { font-family: var(--sans); font-size: 0.78rem; letter-spacing: 0.06em; color: var(--ink-3); }
+.kb-crumbs a { color: var(--ink-3); text-decoration: none; }
+.kb-crumbs a:hover { color: var(--accent); }
+.kb-topic-rel { display: flex; flex-wrap: wrap; gap: 0.4rem 1.8rem; margin: 1.1rem 0 0; font-family: var(--sans); font-size: 0.82rem; }
+.kb-topic-rel > div { display: flex; gap: 0.6rem; align-items: baseline; }
+.kb-topic-rel dt { color: var(--ink-3); font-size: 0.72rem; letter-spacing: 0.08em; }
+.kb-topic-rel dd { margin: 0; }
+.kb-tag-link + .kb-tag-link { margin-left: 0.55rem; }
+.kb-tag-link { text-decoration: none; color: var(--ink-2); }
+.kb-tag-link:hover { color: var(--accent); }
+
 .kb-notfound, .kb-loading { max-width: var(--measure); margin: 5rem auto; text-align: center; font-family: var(--sans); }
 .kb-notfound h1 { font-family: var(--display); font-weight: 500; }
 

@@ -18,6 +18,10 @@
   --c-guided: #d9582a;
   --c-uncond: #159a6b;
   --c-data: #b9b1a2;
+  /* softmax 专题的角色（复用上面校验过的颜色）：概率 p 蓝、指数 e^z 绿、梯度与负值橙 */
+  --c-prob: var(--c-cond);
+  --c-exp: var(--c-uncond);
+  --c-grad: var(--c-guided);
 
   --display: "Fraunces Variable", "Source Han Serif SC", "Songti SC", Georgia, serif;
   --serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;

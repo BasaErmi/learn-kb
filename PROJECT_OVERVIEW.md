@@ -4,10 +4,11 @@
 基于 Vite + React + MDX 的个人学习知识库。每个学习主题一个页面，页面里有讲解、交互演示和复习工具。
 
 ## 目录结构
-- `CFG/`、`LDM/`：原始学习对话记录（只读资料，不发布）
+- `CFG/`、`LDM/`、`Softmax/`：原始学习对话记录（只读资料，不发布）
 - `src/app/`：路由、整体布局、首页
 - `src/kb/`：与主题无关的共用组件和状态（复习模式、要点框、测验、卡片、演示外框）
-- `src/topics/registry.ts`：主题注册表
+- `src/topics/registry.ts`：主题注册表；`usedBy(slug)` 反查前置关系
+- `src/topics/taxonomy.ts`：领域树（领域 › 子领域），决定首页分组
 - `src/topics/<slug>/`：一个主题。`index.mdx` 是正文，`demos/` 放交互演示，`lib/` 放数值计算（纯函数，有单元测试）
 - `public/images/<slug>/`：主题图片
 - `tests/e2e/`：Playwright 端到端测试
@@ -22,6 +23,12 @@ Vite 8、React 19、TypeScript 5.9、MDX 3、KaTeX、Shiki、react-router 7（Ha
 - `npm run test`：单元测试
 - `npm run e2e`：端到端测试
 - `npm run build`：打包到 `dist/`
+
+## 知识库的组织
+- 每个专题挂在一个子领域下（`meta.area = '领域id/子领域id'`），首页按 `taxonomy.ts` 的顺序分组。目前有：机器学习基础 › 概率输出与损失（Softmax）、生成模型 › 扩散模型（CFG、LDM）。
+- `meta.tags` 是跨领域关键词，首页顶部可按标签筛选；专题页的面包屑和标签都链回首页的筛选结果（`#/?area=…`、`#/?tag=…`）。
+- `meta.prereqs` 是建议先读的专题，专题页头同时显示“建议先读”和自动算出的“被这些专题用到”。
+- 规则和理由见 ADR-003。领域 id 发布后不要改名。
 
 ## 数据流
 1. registry 注册主题

@@ -9,7 +9,7 @@ function collectErrors(page: Page) {
 
 test('home lists the LDM topic and opens it', async ({ page }) => {
   await page.goto('./#/')
-  await page.getByRole('link', { name: /Latent Diffusion Model/ }).click()
+  await page.getByRole('heading', { name: 'Latent Diffusion Model', exact: true }).click()
   await expect(page).toHaveURL(/#\/t\/ldm$/)
   await expect(page.getByRole('heading', { level: 1, name: 'Latent Diffusion Model' })).toBeVisible()
 })

@@ -116,3 +116,28 @@
 .kb-controls-row { flex-wrap: nowrap; }
 @media (max-width: 760px) { .kb-controls-row { flex-wrap: wrap; } }
 @media (max-width: 600px) { .kb-segctl button { padding: 0.3rem 0.5rem; } }
+
+/* softmax 专题 */
+.kb-demo-grid.is-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 760px) { .kb-demo-grid.is-even { grid-template-columns: 1fr; } }
+.kb-sm-bars { touch-action: pan-x; } /* 竖向拖动改 logit，横向滑动仍可在窄屏下滚动图表 */
+.kb-sm-hit { fill: transparent; cursor: ns-resize; }
+.kb-sm-logit { fill: color-mix(in srgb, var(--ink-3) 45%, transparent); }
+.kb-sm-exp { fill: color-mix(in srgb, var(--c-exp) 70%, transparent); }
+.kb-sm-prob { fill: var(--c-prob); }
+.kb-sm-bad { fill: color-mix(in srgb, var(--c-grad) 75%, transparent); }
+.kb-sm-ref { fill: none; stroke: var(--ink-3); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.kb-sm-grad { fill: var(--c-grad); }
+.kb-sm-handle { fill: var(--ink); stroke: var(--card); stroke-width: 2; cursor: ns-resize; outline: none; }
+.kb-sm-handle:focus-visible { stroke: var(--accent); stroke-width: 3; }
+.kb-chart .kb-sm-val { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-2); }
+.kb-chart .kb-sm-val.is-bad, .kb-demo-readout .is-bad { fill: var(--c-grad); color: var(--c-grad); }
+.kb-chart .kb-sm-class { font-size: 12px; fill: var(--ink); }
+.kb-chart .kb-sm-dim { fill: var(--ink-3); }
+.stroke-prob { fill: none; stroke: var(--c-prob); stroke-width: 2; }
+.stroke-grad { fill: none; stroke: var(--c-grad); stroke-width: 2; }
+.stroke-exp { fill: none; stroke: var(--c-exp); stroke-width: 2; }
+.kb-mat-cell { stroke: var(--card); stroke-width: 2; cursor: pointer; }
+.kb-mat-cell.is-hot { stroke: var(--ink); stroke-width: 2; }
+.kb-chart .kb-mat-val { font-family: var(--mono); font-size: 10.5px; fill: var(--ink); pointer-events: none; }
+.kb-num-table td.is-bad { color: var(--c-grad); font-weight: 600; }

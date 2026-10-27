@@ -4,7 +4,9 @@ export const meta: TopicMeta = {
   slug: 'cfg',
   title: 'Classifier-Free Guidance',
   summary: '不训练分类器，只用同一个扩散模型的有条件与无条件预测之差，在采样时放大条件，用多样性换质量。',
-  tags: ['扩散模型', '条件生成'],
+  area: 'generative/diffusion',
+  tags: ['条件生成', '采样'],
+  prereqs: ['softmax'],
   updated: '2026-10-14',
   steps: [
     { id: 'overview', title: '总览与记号' },

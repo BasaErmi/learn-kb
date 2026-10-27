@@ -511,7 +511,7 @@ SD 里的“注意力”实际是一个小型 Transformer block（`SpatialTransf
    \end{aligned}
    $$
 
-   self-attention 是标准多头注意力，$Q, K, V$ 都来自 $u$，SD 1.x 用 8 个头：$\text{Attn}(Q, K, V) = \text{softmax}\big(\frac{QK^\top}{\sqrt{d_k}}\big) V$
+   self-attention 是标准多头注意力，$Q, K, V$ 都来自 $u$，SD 1.x 用 8 个头：$\text{Attn}(Q, K, V) = \text{softmax}\big(\frac{QK^\top}{\sqrt{d_k}}\big) V$（为什么除以 $\sqrt{d_k}$ 见 <Ref topic="softmax" to="step-6">Softmax 第 6 步</Ref>）
 4. reshape 回 $H' \times W' \times C$，再用 $1 \times 1$ 卷积做 `proj_out`
 5. 加回进入这个模块之前的特征图（外层残差）
 

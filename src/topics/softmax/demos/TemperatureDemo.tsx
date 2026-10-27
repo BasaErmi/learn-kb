@@ -5,7 +5,7 @@ import { Demo } from '@/kb/components/Demo'
 import { Slider } from '@/kb/components/Slider'
 import { Tex } from '@/kb/components/Tex'
 import { SvgTex } from '@/kb/components/SvgSub'
-import { Z5, entropy, logSumExp, sampleCounts, softmax } from '../lib/softmax'
+import { Z5, entropy, sampleCounts, softmax } from '../lib/softmax'
 import { CLASSES, pct } from './common'
 
 // 温度用对数刻度：u = log10 T ∈ [-1.3, 1.3]，即 T 约从 0.05 到 20
@@ -28,7 +28,6 @@ export function TemperatureDemo() {
   const p = softmax(Z5, T)
   const H = entropy(p)
   const counts = sampleCounts(p, N_SAMPLES, seed)
-  const smoothMax = T * logSumExp(Z5.map((z) => z / T))
 
   const colW = (BW - BM.l - BM.r) / Z5.length
   const by = scaleLinear().domain([0, 1]).range([BH - BM.b, BM.t])
@@ -88,7 +87,6 @@ export function TemperatureDemo() {
       <div className="kb-demo-readout">
         <span><Tex>{'p_{\\text{猫}}'}</Tex> = <b>{pct(p[0])}</b></span>
         <span>熵 <Tex>{'H(p)'}</Tex> = <b>{H.toFixed(3)}</b></span>
-        <span><Tex>{'T \\cdot \\text{LSE}\\big(\\frac{z}{T}\\big)'}</Tex> = <b>{smoothMax.toFixed(3)}</b>（<Tex>{'\\max_j z_j = 2'}</Tex>）</span>
       </div>
     </Demo>
   )

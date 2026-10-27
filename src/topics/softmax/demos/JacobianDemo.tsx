@@ -36,7 +36,7 @@ export function JacobianDemo() {
       label="softmax 的 Jacobian"
       hint="拖动三个 logit，看 $J$ 怎么变；点 $J$ 里的任意一格，下面会写出这一格的代入过程，并和数值差分的结果对照。蓝色为正，橙色为负。"
       onReset={() => { setZ(Z3); setSel([0, 0]) }}
-      note="默认 $z = (\log 7, \log 2, 0)$，对应 $p = (0.7, 0.2, 0.1)$，第 5 步用的也是这组数。数值差分是对 $z_j$ 做步长 $h = 10^{-5}$ 的中心差分。"
+      note="默认 $z = (\log 7, \log 2, 0)$，对应 $p = (0.7, 0.2, 0.1)$，第 4 步的交叉熵例子用的也是这组数。数值差分是对 $z_j$ 做步长 $h = 10^{-5}$ 的中心差分。"
     >
       <div className="kb-svg-scroll">
         <svg viewBox={`0 0 ${W} ${H}`} className="kb-chart" role="group" aria-label="diag(p)、pp^T 和 J 三个矩阵">

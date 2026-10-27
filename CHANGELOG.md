@@ -1,5 +1,17 @@
 # 变更日志
 
+## [2026-10-27] - Changed
+- Softmax 专题精简为 5 步：从 logits 到概率 → 温度 → 平移不变与数值稳定 → 接上交叉熵：$p - y$ → 饱和与 $\sqrt{d_k}$。
+  - 原来的 Jacobian 一步和交叉熵一步合并：正文只给 $\nabla_z L = p - y$ 的结论；Jacobian 的结果放到第 5 步饱和的开头，因为饱和要用到它。
+  - 两处推导移到页末新增的「附录：两个梯度的推导」（A. Jacobian，B. 交叉熵梯度），复习模式下折叠。Jacobian 演示随推导一起移到附录。
+  - 删除 log-sum-exp 一节及其对照图、“多余的自由度与 sigmoid”一节、classifier guidance 旁注，以及框架为什么把 softmax 和交叉熵合成一个算子、`log(softmax)` 下溢、`F.cross_entropy` 传 logits 的讨论（属于交叉熵，留给以后的交叉熵专题）。
+  - 第 3 步改为三节：平移不变的推导、直接按定义算会怎样（上溢、下溢都得到 nan）、先减最大值。
+  - 第 1 步的三个条件改成分点。
+  - 温度演示去掉 LSE 读数；易错点从 12 条减为 10 条，自测卡片从 14 张减为 9 张。
+  - 相关文件：`src/topics/softmax/`、`tests/e2e/softmax.spec.ts`。
+- Softmax 步骤编号变化，CFG 第 3 步检验题和 LDM 第 4 步的链接从 `step-6` 改为 `step-5`。相关文件：`src/topics/cfg/index.mdx`、`src/topics/ldm/index.mdx`。
+- skill 的编辑清单补充了：删除旁支、推导进附录、并列条件分点、不为窄屏改写公式；页面结构补充了可选的附录。相关文件：`.claude/skills/learn-topic-page/`。
+
 ## [2026-10-27] - Added
 - 新专题「Softmax」（`softmax`），6 步：从 logits 到概率 → 温度（为什么叫 soft max）→ 平移不变与数值稳定 → Jacobian → 接上交叉熵：$p - y$ → 饱和与注意力里的 $\sqrt{d_k}$；概率解释（指数族、最大熵）作为第 2 步末尾的旁注。7 个交互演示：可拖动的 $z \to e^{z} \to p$ 三行柱状图（可对比“直接除以总和”）、温度滑块（分布、熵曲线、按分布抽 100 次）、float32 下朴素实现与减最大值的溢出对比、$J = \text{diag}(p) - pp^\top$ 热力图（点格子看代入过程和数值差分）、交叉熵梯度与逐步梯度下降、logit 尺度与饱和（$\|J\|_F$ 对比 $\|p - y\|$）、注意力缩放（不同 $d_k$ 下缩放与不缩放）；另有一张 LSE 与 max、$\sigma$ 与 argmax 的对照图。计算在 `src/topics/softmax/lib/softmax.ts`（24 个单元测试，含数值差分校验）；新增 `tests/e2e/softmax.spec.ts`（13 个测试，含与 CFG 的跨专题链接往返）。对话记录放在 `Softmax/`，已加入发布排除列表。相关文件：`src/topics/softmax/`、`src/styles/demo.css`、`src/styles/tokens.css`（新增 `--c-prob`、`--c-exp`、`--c-grad` 三个角色色，复用已校验的颜色）。
 - 知识库分类：领域树（`src/topics/taxonomy.ts`，领域 › 子领域）+ 跨领域标签 + 前置关系。`TopicMeta` 新增 `area`、`prereqs`；首页按领域分组，顶部可按标签筛选（`#/?tag=…`、`#/?area=…`）；专题页头显示面包屑、标签链接、“建议先读”和“被这些专题用到”；首页卡片显示步数和建议先读。summary 支持 `$...$`。决策记录见 `docs/ADR/ADR-003-知识库按领域树加标签和前置关系组织.md`。相关文件：`src/app/HomePage.tsx`、`src/app/TopicPage.tsx`、`src/topics/registry.ts`、`src/styles/base.css`。

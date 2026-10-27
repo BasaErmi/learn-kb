@@ -44,10 +44,9 @@ test('topic header shows the area, tags and related topics', async ({ page }) =>
 test('softmax page renders all math and demos without errors', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./#/t/softmax')
-  await expect(page.locator('#step-6')).toBeAttached()
+  await expect(page.locator('#step-5')).toBeAttached()
   expect(await page.locator('.katex-error').count()).toBe(0)
   expect(await page.locator('.kb-demo').count()).toBe(7)
-  expect(await page.locator('.kb-figure').count()).toBeGreaterThanOrEqual(1)
   expect(errors).toEqual([])
 })
 
@@ -78,7 +77,7 @@ test('temperature demo reproduces the table and sampling', async ({ page }) => {
   await demo.getByRole('button', { name: 'T = 0.5', exact: true }).click()
   await expect(demo.locator('.kb-demo-readout')).toContainText('83.8%')
   await demo.getByRole('button', { name: 'T = 0.1', exact: true }).click()
-  await expect(demo.locator('.kb-demo-readout')).toContainText('2.000')
+  await expect(demo.locator('.kb-demo-readout')).toContainText('0.001')
   await expect(demo.locator('svg').first()).toContainText('100')
 })
 
@@ -146,7 +145,7 @@ test('attention demo: scaling by sqrt(d_k) prevents saturation', async ({ page }
 test('softmax sliders at extremes produce no NaN outside the overflow demo', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./#/t/softmax')
-  await expect(page.locator('#step-6')).toBeAttached()
+  await expect(page.locator('#step-5')).toBeAttached()
   const sliders = page.locator('.kb-demo input[type="range"]')
   const n = await sliders.count()
   expect(n).toBeGreaterThanOrEqual(6)
@@ -162,6 +161,16 @@ test('softmax sliders at extremes produce no NaN outside the overflow demo', asy
   const others = page.locator('.kb-demo').filter({ hasNot: page.getByRole('table') })
   for (const d of await others.all()) await expect(d).not.toContainText(/\bnan\b/)
   expect(errors).toEqual([])
+})
+
+test('step 4 links to the derivations in the appendix, even in review mode', async ({ page }) => {
+  await page.goto('./#/t/softmax')
+  await page.getByRole('button', { name: '复习', exact: true }).click()
+  const appendix = page.locator('#appendix')
+  await expect(appendix.getByRole('heading', { name: /B. 交叉熵的梯度/ })).toBeHidden()
+  await page.locator('#step-4 .kb-keypoint').getByRole('button', { name: '附录 B' }).click()
+  await expect(page.locator('#ce-derivation + *')).toBeInViewport()
+  await expect(appendix.getByRole('heading', { name: /B. 交叉熵的梯度/ })).toBeVisible()
 })
 
 test('cross-topic links between CFG and softmax round-trip', async ({ page }) => {
@@ -186,7 +195,7 @@ test('cross-topic links between CFG and softmax round-trip', async ({ page }) =>
 test('softmax narrow screen has no horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('./#/t/softmax')
-  await expect(page.locator('#step-6')).toBeAttached()
+  await expect(page.locator('#step-5')).toBeAttached()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   expect(overflow).toBeLessThanOrEqual(1)
 })

@@ -20,9 +20,6 @@ describe('softmax', () => {
     const p = softmax(Z5)
     for (const c of [-500, -3, 7, 900]) softmax(Z5.map((v) => v + c)).forEach((v, i) => expect(v).toBeCloseTo(p[i], 12))
   })
-  it('reduces to the sigmoid of the difference for two classes', () => {
-    for (const [a, b] of [[2, -1], [0.3, 0.3], [-4, 5]]) expect(softmax([a, b])[0]).toBeCloseTo(1 / (1 + Math.exp(-(a - b))), 12)
-  })
 })
 
 describe('temperature', () => {
@@ -37,15 +34,7 @@ describe('temperature', () => {
     softmax(Z5, 1e6).forEach((v) => expect(v).toBeCloseTo(0.2, 5))
     expect(entropy(softmax(Z5, 1e6))).toBeCloseTo(Math.log(5), 6)
   })
-  it('T·LSE(z/T) squeezes between max z and max z + T log K', () => {
-    for (const T of [0.05, 0.5, 1, 4]) {
-      const v = T * logSumExp(Z5.map((z) => z / T))
-      expect(v).toBeGreaterThanOrEqual(2)
-      expect(v).toBeLessThanOrEqual(2 + T * Math.log(5) + 1e-12)
-    }
-    expect(0.05 * logSumExp(Z5.map((z) => z / 0.05))).toBeCloseTo(2, 6)
-  })
-  it('softmax is the gradient of LSE', () => {
+  it('softmax is the gradient of log S (appendix B)', () => {
     const h = 1e-6
     const g = Z5.map((_, j) => (logSumExp(Z5.map((v, k) => (k === j ? v + h : v))) - logSumExp(Z5.map((v, k) => (k === j ? v - h : v)))) / (2 * h))
     softmax(Z5).forEach((p, i) => expect(g[i]).toBeCloseTo(p, 7))

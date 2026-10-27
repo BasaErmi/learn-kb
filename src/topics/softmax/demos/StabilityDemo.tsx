@@ -26,7 +26,7 @@ export function StabilityDemo() {
     <Demo
       title="给所有 logit 加同一个常数 $c$"
       label="给所有 logit 加同一个常数 c"
-      hint="拖动 $c$：数学上 softmax 完全不变，但在 float32 里，直接算 $e^{z_i + c}$ 的实现在 $c$ 大约超过 86.7 时会溢出成 nan；先减最大值的实现一直正确。"
+      hint="拖动 $c$：数学上 softmax 完全不变，但在 float32 里，直接算 $e^{z_i + c}$ 的实现在 $c$ 大约超过 86.7 时上溢、低于约 $-106$ 时下溢，结果都是 nan；先减最大值的实现一直正确。"
       onReset={() => setC(0)}
       note="用 Math.fround 模拟 float32（PyTorch 的默认精度），每次运算后都舍入一次；inf、nan 是 PyTorch 打印这两种值的写法。logits 是第 1 步的 $z = (2, 1, 0.5, -0.5, -1.5)$，$m = \max_j (z_j + c)$。"
     >

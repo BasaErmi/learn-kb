@@ -1,6 +1,5 @@
 import { SoftmaxDemo } from './demos/SoftmaxDemo'
 import { TemperatureDemo } from './demos/TemperatureDemo'
-import { LseFigure } from './demos/LseFigure'
 import { StabilityDemo } from './demos/StabilityDemo'
 import { JacobianDemo } from './demos/JacobianDemo'
 import { CrossEntropyDemo } from './demos/CrossEntropyDemo'
@@ -21,15 +20,14 @@ $$
 
 </KeyPoint>
 
-网络最后一层输出的是一组没有约束的实数，softmax 把它们变成概率。给 logits 除以一个温度，它就在 argmax 和均匀分布之间连续变化，这是名字里 soft 的由来；它只看 logits 之间的差，所以实现时可以先减去最大值防止溢出。求导之后会看到，它和交叉熵合在一起梯度只剩 $p - y$，但分布太尖时 softmax 自身的梯度会消失，注意力里除以 $\sqrt{d_k}$ 就是为此。点击节点可以跳到对应的步骤。
+网络最后一层输出的是一组没有约束的实数，softmax 把它们变成概率。给 logits 除以一个温度，它就在 argmax 和均匀分布之间连续变化，这是名字里 soft 的由来；它只看 logits 之间的差，所以实现时可以先减去最大值防止溢出。训练时它和交叉熵合在一起，梯度只剩 $p - y$；但分布太尖时 softmax 自身的梯度会消失，注意力里除以 $\sqrt{d_k}$ 就是为此。两处梯度的推导放在页末的附录。点击节点可以跳到对应的步骤。
 
 <Roadmap legend={{ goal: '定义', basis: '性质', core: '梯度' }} nodes={[
   { id: 'step-1', label: '定义', sub: 'logits → 概率', kind: 'goal' },
   { id: 'step-2', label: '温度', sub: 'soft 的由来', kind: 'basis' },
   { id: 'step-3', label: '平移不变', sub: '先减最大值', kind: 'basis' },
-  { id: 'step-4', label: 'Jacobian', sub: '$\\text{diag}(p) - pp^\\top$', kind: 'core' },
-  { id: 'step-5', label: '交叉熵', sub: '梯度 $p - y$', kind: 'core' },
-  { id: 'step-6', label: '饱和', sub: '注意力的 $\\sqrt{d_k}$', kind: 'core' },
+  { id: 'step-4', label: '交叉熵', sub: '梯度 $p - y$', kind: 'core' },
+  { id: 'step-5', label: '饱和', sub: '注意力的 $\\sqrt{d_k}$', kind: 'core' },
 ]} />
 
 ### 记号
@@ -41,11 +39,9 @@ $$
 | $p = \text{softmax}(z)$ | 输出的概率分布，$p_i \in (0, 1)$，$\sum_i p_i = 1$ |
 | $S = \sum_{k} e^{z_k}$ | 归一化用的分母 |
 | $T$ | 温度，$T = 1$ 就是标准 softmax |
-| $\text{LSE}(z) = \log \sum_j e^{z_j}$ | log-sum-exp |
 | $y$ | 真实标签的 one-hot 向量 |
 | $L = -\sum_i y_i \log p_i$ | 交叉熵损失 |
 | $J$ | softmax 的 Jacobian，$J_{ij} = \frac{\partial p_i}{\partial z_j}$ |
-| $\delta_{ij}$ | Kronecker delta：$i = j$ 时为 1，否则为 0 |
 | $d_k$ | 注意力里 query 和 key 的维度 |
 
 <Pitfall title="logits 的名字">
@@ -72,7 +68,11 @@ $$
 
 ### 网络输出的是 logits
 
-分类网络的最后一层通常是一个线性层，输出 $K$ 个实数 $z_1, \dots, z_K$，每类一个。它们可以是负数，加起来也不等于 1，所以还不能当作概率。要把它们解释成“属于每一类的概率”，需要一个映射同时满足三点：每一项非负；所有项加起来为 1；$z$ 越大，概率越大。
+分类网络的最后一层通常是一个线性层，输出 $K$ 个实数 $z_1, \dots, z_K$，每类一个。它们可以是负数，加起来也不等于 1，所以还不能当作概率。要把它们解释成“属于每一类的概率”，需要一个映射同时满足三点：
+
+- 每一项非负；
+- 所有项加起来为 1；
+- $z$ 越大，概率越大。
 
 ### 先取指数，再归一化
 
@@ -125,7 +125,7 @@ $z$ 全相等时三类的指数相同，$p = (\frac{1}{3}, \frac{1}{3}, \frac{1}
 
 </Step>
 
-<Step id="step-2" n={2} title="温度：为什么叫 soft max" gist="logits 除以温度 $T$：$T \to 0$ 时退化成 argmax，$T \to \infty$ 时变成均匀分布。softmax 是 argmax 的平滑版本，log-sum-exp 是 max 的平滑版本。">
+<Step id="step-2" n={2} title="温度：为什么叫 soft max" gist="logits 除以温度 $T$：$T \to 0$ 时退化成 argmax，$T \to \infty$ 时变成均匀分布。softmax 是 argmax 的平滑版本。">
 
 <KeyPoint>
 
@@ -139,11 +139,7 @@ $$
 - $T = 1$：标准 softmax
 - $T \to \infty$：分布趋向均匀
 
-log-sum-exp 是 max 的平滑近似，它的梯度正好是 softmax：
-
-$$
-\max_j z_j \le \text{LSE}(z) \le \max_j z_j + \log K, \qquad \nabla_z \text{LSE}(z) = \text{softmax}(z)
-$$
+softmax 在这两个极端之间连续变化、处处可导，所以是 argmax 的平滑版本。
 
 </KeyPoint>
 
@@ -191,35 +187,9 @@ $$
 
 降温等价于把原来的概率做 $\frac{1}{T}$ 次方再归一化。<Ref topic="cfg" to="sharpen-goal">CFG 第 1 步</Ref>的“锐化”$p(x)\,p(y \mid x)^s$ 用的是同一个想法，指数 $s$ 相当于 $\frac{1}{T}$。
 
-<Anchor id="lse-grad" />
-
-### log-sum-exp：max 的平滑版本
-
-softmax 的分母取对数，就是 log-sum-exp：
-
-$$
-\text{LSE}(z) = \log \sum_{j} e^{z_j}
-$$
-
-记 $m = \max_j z_j$。求和里最大的一项是 $e^{m}$，总共 $K$ 项，所以 $e^{m} \le \sum_j e^{z_j} \le K e^{m}$，取对数得
-
-$$
-m \le \text{LSE}(z) \le m + \log K
-$$
-
-LSE 总是夹在最大值和最大值加 $\log K$ 之间。加上温度，$T \cdot \text{LSE}\big(\frac{z}{T}\big)$ 夹在 $m$ 和 $m + T \log K$ 之间，$T \to 0$ 时就等于 $\max_j z_j$。对 $z_i$ 求导：
-
-$$
-\frac{\partial\, \text{LSE}(z)}{\partial z_i} = \frac{e^{z_i}}{\sum_j e^{z_j}} = p_i
-$$
-
-**softmax 正好是 LSE 的梯度。** 而 $\max_j z_j$ 对 $z_i$ 的导数，在 $z_i$ 是唯一最大值时为 1、否则为 0，正是 argmax 的 one-hot 输出。两组对应关系是平行的：LSE 平滑了 max，它的梯度 softmax 就平滑了 argmax。下图只有两个 logit $(x, 0)$，这时 $p_1 = \frac{e^{x}}{e^{x} + 1} = \sigma(x)$，可以把这层关系画出来。
-
-<LseFigure />
-
 <Aside title="概率解释：指数族与最大熵">
 
-把 categorical 分布写成指数族形式 $P(\text{类} = i) = \exp\big(z_i - A(z)\big)$，自然参数是 $z$，对数配分函数 $A(z)$ 正好是 $\text{LSE}(z)$。指数族里对数配分函数的梯度就是均值参数，所以 softmax 就是 categorical 分布从自然参数到均值参数的映射。
+把 categorical 分布写成指数族形式 $P(\text{类} = i) = \exp\big(z_i - A(z)\big)$，自然参数是 $z$，对数配分函数是 $A(z) = \log \sum_j e^{z_j}$。指数族里对数配分函数的梯度就是均值参数，这里 $\nabla_z A(z) = \text{softmax}(z)$，所以 softmax 就是 categorical 分布从自然参数到均值参数的映射。
 
 从最大熵的角度看：在“期望得分 $\sum_i p_i z_i$ 等于给定值”的约束下，熵最大的分布是 $p_i \propto e^{z_i / T}$，$T$ 来自约束对应的拉格朗日乘子。这就是统计物理里的 Boltzmann（Gibbs）分布 $p_i \propto e^{-E_i / (k_B T)}$，能量 $E_i$ 对应 $-z_i$，“温度”这个名字也由此而来。
 
@@ -229,7 +199,7 @@ $$
 
 <Pitfall>
 
-softmax 平滑的是 **argmax**，不是 max。max 的平滑版本是 log-sum-exp，softmax 是它的梯度。另外，温度越**低**分布越尖，不是越高。
+softmax 平滑的是 **argmax**（输出一个 one-hot 向量），不是 max（输出最大值本身）。另外，温度越**低**分布越尖，不是越高。
 
 </Pitfall>
 
@@ -249,7 +219,7 @@ softmax 平滑的是 **argmax**，不是 max。max 的平滑版本是 log-sum-ex
 
 </Step>
 
-<Step id="step-3" n={3} title="平移不变与数值稳定" gist="所有 logits 加同一个常数，softmax 不变；所以实现时先减去最大值，指数就不会溢出。">
+<Step id="step-3" n={3} title="平移不变与数值稳定" gist="所有 logits 加同一个常数，softmax 不变；所以实现时先减去最大值，指数既不会上溢，分母也不会下溢成 0。">
 
 <Anchor id="shift-inv" />
 
@@ -259,7 +229,7 @@ $$
 \text{softmax}(z + c\mathbf{1}) = \text{softmax}(z)
 $$
 
-实现时总是先减去最大值 $m = \max_j z_j$：$p_i = \frac{e^{z_i - m}}{\sum_j e^{z_j - m}}$，结果完全不变，但指数不会上溢。softmax 只依赖 logits 之间的差，所以 $K$ 个 logits 里有一个自由度是冗余的；$K = 2$ 时退化成 sigmoid：$p_1 = \sigma(z_1 - z_2)$。
+直接按定义算，logit 太大时 $e^{z}$ 上溢成 inf，全都很负时又会全部下溢成 0，两种情况都得到 nan。实现时先减去最大值 $m = \max_j z_j$：$p_i = \frac{e^{z_i - m}}{\sum_j e^{z_j - m}}$，结果完全不变，两种问题都不会出现。
 
 </KeyPoint>
 
@@ -275,11 +245,16 @@ $$
 
 这和<Ref to="step-1">第 1 步</Ref>的 $\frac{p_i}{p_j} = e^{z_i - z_j}$ 是同一件事：概率只由 logit 之差决定，整体平移不改变任何差值。
 
-### 实现时先减最大值
+### 直接按定义算会怎样
 
-数学上不变，计算机里却不一样。float32 能表示的最大数约为 $3.4 \times 10^{38}$，$e^{z}$ 在 $z$ 超过 88.72 时就会上溢成 inf，分子分母都是 inf，相除得到 nan。半精度更紧：float16 的上限只有 65504，$z$ 超过 11.09 就会溢出，混合精度训练时很容易碰到。
+数学上不变，计算机里却不一样。直接算 $e^{z_i}$ 有两种失败方式：
 
-利用平移不变性，先减去最大值 $m = \max_j z_j$ 再算。这时所有指数都不大于 0，最大的一项正好是 $e^{0} = 1$，分母落在 $[1, K]$ 之间：既不会上溢，分母也不会因为所有项都下溢而变成 0。很小的项下溢成 0 没有关系，它们真实的概率本来就可以忽略。
+- **上溢**：float32 能表示的最大数约为 $3.4 \times 10^{38}$，$z$ 超过 88.72 时 $e^{z}$ 就变成 inf，分子分母都是 inf，相除得到 nan。半精度更紧，float16 的上限只有 65504，$z$ 超过 11.09 就会溢出，混合精度训练时很容易碰到。
+- **下溢**：所有 logit 都低于约 $-104$ 时，每一项 $e^{z_j}$ 在 float32 里都变成 0，分母为 0，得到 0 / 0 = nan。
+
+### 先减去最大值
+
+利用平移不变性，先减去最大值 $m = \max_j z_j$ 再算。这时所有指数都不大于 0，最大的一项正好是 $e^{0} = 1$：分子不会上溢，分母落在 $[1, K]$ 之间，也不会变成 0。很小的项下溢成 0 没有关系，它们真实的概率本来就可以忽略。
 
 <StabilityDemo />
 
@@ -291,18 +266,6 @@ def softmax(z):
     e = np.exp(z)
     return e / e.sum(axis=-1, keepdims=True)
 ```
-
-### 只看差值：多余的自由度与 sigmoid
-
-$K$ 个 logits 决定的分布只有 $K - 1$ 个自由度（概率加起来必须是 1），而整体平移不改变结果，说明 logits 里有一个自由度是多余的。多项 logistic 回归有时会把最后一类的 logit 固定为 0，就是去掉了这个冗余。
-
-$K = 2$ 时，把分子分母同时除以 $e^{z_1}$：
-
-$$
-p_1 = \frac{e^{z_1}}{e^{z_1} + e^{z_2}} = \frac{1}{1 + e^{-(z_1 - z_2)}} = \sigma(z_1 - z_2)
-$$
-
-两类 softmax 就是对 logit 之差做 sigmoid。所以二分类只输出一个 logit 再接 sigmoid，和输出两个 logit 再接 softmax 是等价的，前者只是把这个冗余的自由度省掉了。<Ref to="lse-grad">第 2 步的图</Ref>里画的 $\sigma\big(\frac{x}{T}\big)$ 就是这种情况。
 
 </Detail>
 
@@ -318,212 +281,47 @@ float32 下直接算 $z = (1000, 1001)$ 的 softmax 会得到什么？减最大�
 
 <Answer>
 
-$e^{1000}$ 和 $e^{1001}$ 都上溢成 inf，inf / inf = nan，两项都是 nan。减去最大值 1001 后变成 $(-1, 0)$，$p_1 = \sigma(-1) \approx 0.269$，$p_2 \approx 0.731$。
+$e^{1000}$ 和 $e^{1001}$ 都上溢成 inf，inf / inf = nan，两项都是 nan。减去最大值 1001 后变成 $(-1, 0)$，$p_1 = \frac{e^{-1}}{e^{-1} + 1} \approx 0.269$，$p_2 \approx 0.731$。
 
 </Answer>
 
 </Quiz>
 
-到这里讲的都是前向计算。训练需要梯度，下一步求 softmax 对 logits 的导数。
+到这里讲的都是前向计算。训练还需要梯度，分类任务里 softmax 后面几乎总是接交叉熵，下一步先看两者合起来的梯度。
 
 </Step>
 
-<Step id="step-4" n={4} title="softmax 的 Jacobian" gist="改动任何一个 $z_j$ 都会影响所有 $p_i$：$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j)$，排成矩阵就是 $J = \text{diag}(p) - pp^\top$。">
-
-<Anchor id="jac-formula" />
+<Step id="step-4" n={4} title="接上交叉熵：梯度只剩 $p - y$" gist="分类训练里 softmax 后面接交叉熵 $L = -\log p_{\text{真实类}}$，两者合起来对 logits 的梯度就是 $p - y$。">
 
 <KeyPoint>
 
 $$
-\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j), \qquad J = \text{diag}(p) - pp^\top
+L = -\sum_{i=1}^{K} y_i \log p_i = -\log p_{\text{真实类}}, \qquad \nabla_z L = p - y
 $$
 
-对角线 $p_i(1 - p_i)$ 为正：调大自己的 logit，自己的概率变大。非对角 $-p_i p_j$ 为负：调大别人的 logit，分母变大，自己被“挤小”。
+真实类别的 logit 被往上推，其余类别按各自的概率被往下压。推导见<Ref to="ce-derivation">附录 B</Ref>。
 
 </KeyPoint>
 
 <Detail>
 
-### 要求的是什么
+### 交叉熵对 logits 的梯度
 
-沿用<Ref to="step-1">第 1 步</Ref>的写法 $p_i = \frac{e^{z_i}}{S}$，$S = \sum_{k=1}^{K} e^{z_k}$。我们想知道：改变某个输入 $z_j$，某个输出 $p_i$ 会怎么变，也就是 $\frac{\partial p_i}{\partial z_j}$。
-
-这里 $i$ 和 $j$ 是两个独立的下标。每个 $p_i$ 的分母里都有全部的 $z$，所以改动任何一个 $z_j$ 都会影响所有的 $p_i$，一共有 $K \times K$ 个偏导数，要分 $i = j$ 和 $i \ne j$ 两种情况讨论。
-
-先算一个后面要用的小结果：$S$ 对 $z_j$ 求导时，只有 $e^{z_j}$ 那一项和 $z_j$ 有关，所以
+真实标签用 one-hot 向量 $y$ 表示，比如 $K = 3$、真实类别是第 2 类时 $y = (0, 1, 0)$。交叉熵损失是
 
 $$
-\frac{\partial S}{\partial z_j} = e^{z_j}
+L = -\sum_{i=1}^{K} y_i \log p_i = -\log p_{\text{真实类}}
 $$
 
-### 用商法则分两种情况
-
-$p_i = \frac{e^{z_i}}{S}$ 是一个分式，用商法则 $\left(\frac{u}{v}\right)' = \frac{u'v - uv'}{v^2}$，其中 $u = e^{z_i}$，$v = S$。
-
-**情况一：$i = j$**（输出和输入是同一个位置）。$u$ 和 $v$ 对 $z_i$ 的导数都是 $e^{z_i}$：
-
-<Derivation>
-
-$$
-\frac{\partial p_i}{\partial z_i} = \frac{e^{z_i} \cdot S - e^{z_i} \cdot e^{z_i}}{S^2}
-$$
-
-$$
-= \frac{e^{z_i}}{S} - \frac{e^{z_i}}{S} \cdot \frac{e^{z_i}}{S} = p_i - p_i^2
-$$
-
-$$
-= p_i(1 - p_i)
-$$
-
-</Derivation>
-
-$p_i$ 在 0 和 1 之间，所以这个导数是正的：调大 $z_i$，$p_i$ 变大。
-
-**情况二：$i \ne j$**（输出和输入是不同位置）。分子 $e^{z_i}$ 里没有 $z_j$，导数为 0；分母的导数仍然是 $e^{z_j}$：
-
-$$
-\frac{\partial p_i}{\partial z_j} = \frac{0 \cdot S - e^{z_i} \cdot e^{z_j}}{S^2} = -\frac{e^{z_i}}{S} \cdot \frac{e^{z_j}}{S} = -p_i p_j
-$$
-
-这个导数是负的：调大别人的 $z_j$，分母变大，$p_i$ 被“挤小”。
-
-### 合成一个式子
-
-Kronecker delta $\delta_{ij}$ 就像一个开关：
-
-$$
-\delta_{ij} = \begin{cases} 1, & i = j \\ 0, & i \ne j \end{cases}
-$$
-
-用它可以把两种情况统一写成
-
-$$
-\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j)
-$$
-
-验证一下：$i = j$ 时是 $p_i(1 - p_i)$，$i \ne j$ 时是 $p_i(0 - p_j) = -p_i p_j$，和上面两种情况一致。
-
-### 写成矩阵
-
-把所有 $\frac{\partial p_i}{\partial z_j}$ 排成一个 $K \times K$ 矩阵，第 $i$ 行第 $j$ 列放 $\frac{\partial p_i}{\partial z_j}$，这个矩阵就是 Jacobian $J$。以 $K = 3$ 为例：
-
-$$
-J = \begin{pmatrix}
-p_1(1-p_1) & -p_1 p_2 & -p_1 p_3 \\
--p_2 p_1 & p_2(1-p_2) & -p_2 p_3 \\
--p_3 p_1 & -p_3 p_2 & p_3(1-p_3)
-\end{pmatrix}
-$$
-
-它可以拆成两部分。$\text{diag}(p)$ 是对角线上放 $p_1, p_2, p_3$、其余为 0 的矩阵，对应 $\delta_{ij}$ 那一项；$pp^\top$ 是列向量 $p$ 乘以行向量 $p^\top$（外积），第 $i$ 行第 $j$ 列是 $p_i p_j$：
-
-$$
-\text{diag}(p) = \begin{pmatrix} p_1 & 0 & 0 \\ 0 & p_2 & 0 \\ 0 & 0 & p_3 \end{pmatrix}, \qquad
-pp^\top = \begin{pmatrix} p_1p_1 & p_1p_2 & p_1p_3 \\ p_2p_1 & p_2p_2 & p_2p_3 \\ p_3p_1 & p_3p_2 & p_3p_3 \end{pmatrix}
-$$
-
-两者相减正好就是 $J$：
-
-$$
-J = \text{diag}(p) - pp^\top
-$$
-
-$p = (0.7, 0.2, 0.1)$ 时，对角线是 $(0.21, 0.16, 0.09)$，非对角是 $-0.14$、$-0.07$、$-0.02$。下面的演示里可以点任意一格，对照代入过程和数值差分的结果。
-
-<JacobianDemo />
-
-<Aside title="每一行加起来都是 0">
-
-$\sum_j J_{ij} = p_i\big(1 - \sum_j p_j\big) = 0$。把所有 logits 同时加 $c$，每个 $p_i$ 的变化量是这一行之和乘以 $c$，等于 0，这正是<Ref to="shift-inv">第 3 步</Ref>的平移不变性。$J$ 还是对称的，所以每一列加起来也是 0。
-
-</Aside>
-
-</Detail>
-
-<Pitfall>
-
-不要以为 $\frac{\partial p_i}{\partial z_j}$ 只在 $i = j$ 时非零。每个 $p_i$ 的分母都含有全部的 $z$，非对角元是 $-p_i p_j$，一般不为 0。
-
-</Pitfall>
-
-<Quiz>
-
-$p = (0.7, 0.2, 0.1)$ 时，$\frac{\partial p_1}{\partial z_1}$ 和 $\frac{\partial p_2}{\partial z_1}$ 各是多少？
-
-<Answer>
-
-$\frac{\partial p_1}{\partial z_1} = 0.7 \times (1 - 0.7) = 0.21$；$\frac{\partial p_2}{\partial z_1} = 0.2 \times (0 - 0.7) = -0.14$。
-
-</Answer>
-
-</Quiz>
-
-单独看这个 Jacobian 有些麻烦。但训练分类器时，softmax 后面几乎总是接交叉熵，两者合起来会简单得多。
-
-</Step>
-
-<Step id="step-5" n={5} title="接上交叉熵：梯度只剩 $p - y$" gist="链式法则展开后 $p_i$ 正好约掉：$\nabla_z L = p - y$。框架把两者合成一个直接接收 logits 的算子，用 $\log p_i = z_i - \text{LSE}(z)$ 计算。">
-
-<KeyPoint>
-
-$$
-L = -\sum_{i=1}^{K} y_i \log p_i, \qquad \frac{\partial L}{\partial z} = p - y
-$$
-
-框架里的交叉熵直接接收 logits（`F.cross_entropy`），内部用 $\log p_i = z_i - \text{LSE}(z)$ 计算：既省掉了 Jacobian，又避免先算 $p$ 再取 log 时遇到 $\log 0$。
-
-</KeyPoint>
-
-<Detail>
-
-### 交叉熵
-
-分类任务里，真实标签用 one-hot 向量 $y$ 表示。比如 $K = 3$、真实类别是第 2 类时 $y = (0, 1, 0)$，$y$ 的所有分量加起来等于 1。交叉熵损失是
-
-$$
-L = -\sum_{i=1}^{K} y_i \log p_i
-$$
-
-因为 $y$ 是 one-hot，求和里只剩真实类别那一项，其实就是 $L = -\log p_{\text{真实类}}$。
-
-### 链式法则
-
-要求的是 $\frac{\partial L}{\partial z_j}$。$L$ 通过所有的 $p_i$ 依赖于 $z_j$，用链式法则把每条路径加起来：
-
-$$
-\frac{\partial L}{\partial z_j} = \sum_{i=1}^{K} \frac{\partial L}{\partial p_i} \cdot \frac{\partial p_i}{\partial z_j}
-$$
-
-第一个因子是 $\frac{\partial L}{\partial p_i} = -\frac{y_i}{p_i}$，第二个因子是<Ref to="jac-formula">第 4 步</Ref>推出的 $p_i(\delta_{ij} - p_j)$。代入：
-
-<Derivation>
-
-$$
-\frac{\partial L}{\partial z_j} = \sum_{i} \left(-\frac{y_i}{p_i}\right) p_i (\delta_{ij} - p_j) = -\sum_i y_i (\delta_{ij} - p_j)
-$$
-
-$$
-= -\sum_i y_i \delta_{ij} + p_j \sum_i y_i
-$$
-
-$$
-= -y_j + p_j
-$$
-
-</Derivation>
-
-第一行里 $p_i$ 正好约掉了。第二行的两项：$\delta_{ij}$ 只在 $i = j$ 时为 1，所以第一项的求和只剩 $y_j$；第二项里 $\sum_i y_i = 1$。写成向量就是
+把 $p = \text{softmax}(z)$ 代进去对 logits 求导，结果非常简单（推导见<Ref to="ce-derivation">附录 B</Ref>）：
 
 $$
 \nabla_z L = p - y
 $$
 
-还有一条更短的路。把 $\log p_i = z_i - \text{LSE}(z)$ 代入，$L = \text{LSE}(z) - z_{\text{真实类}}$；<Ref to="lse-grad">第 2 步</Ref>已经知道 $\nabla_z \text{LSE}(z) = p$，而 $z_{\text{真实类}}$ 的梯度就是 $y$，两项相减同样得到 $p - y$。
-
 <Anchor id="ce-example" />
 
-### 用数字感受一下
+### 梯度怎样更新 logits
 
 假设 $p = (0.7, 0.2, 0.1)$，真实类别是第 2 类，$y = (0, 1, 0)$：
 
@@ -535,32 +333,11 @@ $$
 
 <CrossEntropyDemo />
 
-### 框架为什么把两者合成一个算子
-
-PyTorch 的 `F.cross_entropy`（以及 `nn.CrossEntropyLoss`）直接接收 logits，内部先算 log-softmax，再取真实类别那一项。合在一起有两个好处。
-
-**省计算。** 反向传播时不必构造 $K \times K$ 的 Jacobian 再做矩阵乘法，梯度直接就是 $p - y$。
-
-**更稳定。** 先算 $p$ 再取 log，真实类别的概率一旦下溢成 0，就会得到 $\log 0 = -\infty$。比如 float32 下 $z = (0, -200)$，$e^{-200}$ 小于 float32 能表示的最小正数，$p_2$ 直接变成 0。直接用
-
-$$
-\log p_i = z_i - \text{LSE}(z)
-$$
-
-计算，LSE 本身也先减最大值（<Ref to="shift-inv">第 3 步</Ref>），全程不会出现 $\log 0$，上面的例子得到的是有限值 $\log p_2 \approx -200$。
-
-```python
-import torch.nn.functional as F
-
-loss = F.cross_entropy(logits, target)  # 直接传 logits，内部用 log_softmax
-# 结果相同但不稳定：F.nll_loss(torch.log(torch.softmax(logits, -1)), target)
-```
-
 </Detail>
 
 <Pitfall>
 
-`F.cross_entropy` 要的是 logits。如果先做了 softmax 再传进去，softmax 就被做了两次：输入的“logits”已经在 0 到 1 之间，第二次 softmax 的输出接近均匀，梯度被压得很小，训练会明显变慢，而且不报错。
+$p - y$ 是 softmax 和交叉熵**合起来**对 logits 的梯度。softmax 单独的导数是一个 $K \times K$ 的矩阵（<Ref to="step-5">第 5 步</Ref>），后面接的不是交叉熵时，梯度没有这么简单。
 
 </Pitfall>
 
@@ -576,15 +353,19 @@ $y = (0, 0, 1)$，$p - y = (0.1, 0.6, -0.7)$。$z_3$ 增加最多（$0.7\eta$）
 
 </Quiz>
 
-$p - y$ 只在“预测对了而且很自信”时才接近 0。但 softmax 后面并不总是接 log，这时还有一个问题要处理。
+$p - y$ 只在“预测对了而且很自信”时才接近 0。但 softmax 后面并不总是接交叉熵，比如注意力，这时就要看 softmax 自身的导数。
 
 </Step>
 
-<Step id="step-6" n={6} title="饱和与注意力里的 $\sqrt{d_k}$" gist="分布接近 one-hot 时 $J \approx 0$，经过 softmax 往回传的梯度几乎消失；注意力把点积除以 $\sqrt{d_k}$，就是为了不让分数随维度变大而饱和。">
+<Step id="step-5" n={5} title="饱和与注意力里的 $\sqrt{d_k}$" gist="softmax 自身的导数是 $J = \text{diag}(p) - pp^\top$；分布接近 one-hot 时 $J \approx 0$，往回传的梯度几乎消失。注意力把点积除以 $\sqrt{d_k}$，就是为了不让分数随维度变大而饱和。">
 
 <KeyPoint>
 
-当某个 $z_i$ 远大于其他时，$p$ 接近 one-hot，$J = \text{diag}(p) - pp^\top \approx 0$，梯度几乎消失。Transformer 的注意力用
+$$
+J_{ij} = \frac{\partial p_i}{\partial z_j}, \qquad J = \text{diag}(p) - pp^\top
+$$
+
+当某个 $z_i$ 远大于其他时，$p$ 接近 one-hot，$J \approx 0$，经过 softmax 往回传的梯度几乎消失。Transformer 的注意力用
 
 $$
 \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)
@@ -596,6 +377,17 @@ $$
 
 <Detail>
 
+### softmax 自身的导数
+
+每个 $p_i$ 的分母里都有全部的 $z$，改动任何一个 $z_j$ 都会影响所有的 $p_i$，所以 softmax 的导数是一个 $K \times K$ 的矩阵，即 Jacobian（推导见<Ref to="jac-formula">附录 A</Ref>）：
+
+$$
+\frac{\partial p_i}{\partial z_j} = \begin{cases} p_i(1 - p_i), & i = j \\ -p_i p_j, & i \ne j \end{cases}
+\qquad\Longrightarrow\qquad J = \text{diag}(p) - pp^\top
+$$
+
+对角元为正：调大自己的 logit，自己的概率变大。非对角元为负：调大别人的 logit，分母变大，自己被“挤小”。
+
 ### 饱和：Jacobian 趋于 0
 
 设 $p$ 正好是 one-hot，$p = e_k$（第 $k$ 个分量为 1，其余为 0）。这时 $\text{diag}(p)$ 只有第 $k$ 个对角元是 1，$pp^\top$ 也只有第 $(k, k)$ 个元素是 1，两者相减
@@ -606,7 +398,7 @@ $$
 
 $p$ 接近 one-hot 时也一样：对角元 $p_i(1 - p_i)$ 和非对角元 $-p_i p_j$ 里，总有一个因子接近 0。
 
-这为什么意味着梯度消失？如果 softmax 后面接的是别的运算（比如注意力权重去乘 value），损失对 $p$ 的梯度记为 $g = \frac{\partial \ell}{\partial p}$，那么往回传到 logits 的梯度是
+如果 softmax 后面接的是别的运算（比如注意力权重去乘 value），损失对 $p$ 的梯度记为 $g = \frac{\partial \ell}{\partial p}$，往回传到 logits 的梯度是
 
 $$
 \frac{\partial \ell}{\partial z} = J^\top g
@@ -622,13 +414,7 @@ $J \approx 0$ 时，不管 $g$ 是什么，传到 $z$ 的梯度都接近 0，sof
 
 演示里的橙线是交叉熵的梯度 $\|p - y\|$。真实类别是“猫”时，它随 $a$ 变大一起趋于 0：预测又对又自信，本来就没什么可学的。真实类别换成“狐狸”时，它反而升到 $\sqrt{2} \approx 1.414$：错得越自信，梯度越大。
 
-原因在<Ref to="step-5">第 5 步</Ref>的推导里：$\frac{\partial L}{\partial p_i} = -\frac{y_i}{p_i}$，真实类别的概率越小，这一项越大，正好抵消了 $J$ 的变小，结果是不会消失的 $p - y$。所以饱和真正造成麻烦的，是 softmax 后面**不接 log** 的地方，注意力就是最典型的例子。
-
-<Aside title="和 classifier guidance 的联系">
-
-“又对又自信时梯度趋于 0”对输入梯度同样成立。<Ref topic="cfg" to="step-3">CFG 第 3 步</Ref>的 classifier guidance 用的是 $\nabla_x \log p(y \mid x)$，噪声很小时分类器对类别已经很有把握，$p - y \approx 0$，guidance 几乎不起作用。
-
-</Aside>
+这是因为交叉熵对真实类概率的导数是 $-\frac{1}{p_{\text{真实类}}}$，概率越小这一项越大，正好抵消了 $J$ 的变小（<Ref to="ce-derivation">附录 B</Ref>）。所以饱和真正造成麻烦的，是 softmax 后面**不接 log** 的地方，注意力就是最典型的例子。
 
 ### 注意力里的 $\sqrt{d_k}$
 
@@ -699,15 +485,11 @@ $\sqrt{256} = 16$。缩放后的版本相当于对同一组点积用 $T = 16$ �
 | 定义 | $p_i = \frac{e^{z_i}}{\sum_j e^{z_j}}$ |
 | 概率之比 | $\frac{p_i}{p_j} = e^{z_i - z_j}$ |
 | 带温度 | $p_i(T) = \frac{e^{z_i / T}}{\sum_j e^{z_j / T}} \propto p_i^{1/T}$（$p_i$ 是 $T = 1$ 时的概率） |
-| log-sum-exp | $\text{LSE}(z) = \log \sum_j e^{z_j}$，$\max_j z_j \le \text{LSE}(z) \le \max_j z_j + \log K$ |
-| LSE 的梯度 | $\nabla_z \text{LSE}(z) = \text{softmax}(z)$ |
 | 平移不变 | $\text{softmax}(z + c\mathbf{1}) = \text{softmax}(z)$ |
 | 稳定实现 | $p_i = \frac{e^{z_i - m}}{\sum_j e^{z_j - m}}$，$m = \max_j z_j$ |
-| 两类退化为 sigmoid | $p_1 = \sigma(z_1 - z_2)$ |
-| Jacobian | $\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j)$，$J = \text{diag}(p) - pp^\top$ |
-| 交叉熵 | $L = -\sum_i y_i \log p_i = \text{LSE}(z) - z_{\text{真实类}}$ |
+| 交叉熵 | $L = -\sum_i y_i \log p_i = -\log p_{\text{真实类}}$ |
 | 交叉熵的梯度 | $\nabla_z L = p - y$ |
-| log-softmax | $\log p_i = z_i - \text{LSE}(z)$ |
+| Jacobian | $\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j)$，$J = \text{diag}(p) - pp^\top$ |
 | 饱和 | $p \to e_k \Rightarrow J \to 0$，$\frac{\partial \ell}{\partial z} = J^\top g \to 0$ |
 | 点积的方差 | $\text{Var}(q^\top k) = d_k$ |
 | 缩放点积注意力 | $\text{softmax}\big(\frac{QK^\top}{\sqrt{d_k}}\big) V$ |
@@ -720,16 +502,14 @@ $\sqrt{256} = 16$。缩放后的版本相当于对同一组点积用 $T = 16$ �
 
 1. ✗ logits 的绝对大小有意义 → ✓ 只有差值有意义：$z_i - z_j = \log \frac{p_i}{p_j}$，整体平移不改变分布。
 2. ✗ 直接 $\frac{z_i}{\sum_j z_j}$ 也能当概率 → ✓ 总和为 1，但可能为负、可能大于 1；非负性要靠指数。
-3. ✗ softmax 是 max 的平滑版本 → ✓ 它平滑的是 argmax；max 的平滑版本是 log-sum-exp，softmax 是 LSE 的梯度。
+3. ✗ softmax 是 max 的平滑版本 → ✓ 它平滑的是 argmax：输出一个分布，$T \to 0$ 时趋向 one-hot。
 4. ✗ 温度越高分布越尖 → ✓ 温度越低越尖，$T \to 0$ 是 argmax，$T \to \infty$ 是均匀分布。
-5. ✗ 减最大值是一种近似 → ✓ 由平移不变性，结果完全相等，只是计算顺序不会溢出。
-6. ✗ $\frac{\partial p_i}{\partial z_j}$ 只在 $i = j$ 时非零 → ✓ 分母含有全部的 $z$，非对角元是 $-p_i p_j$。
-7. ✗ softmax + 交叉熵求梯度要先算出 Jacobian 再相乘 → ✓ 链式法则里 $p_i$ 约掉，结果直接是 $p - y$。
-8. ✗ 先 softmax 再传给 `F.cross_entropy` → ✓ 它要的是 logits，否则 softmax 被做两次，梯度被压小而且不报错。
-9. ✗ `log(softmax(z))` 和 `log_softmax(z)` 完全一样 → ✓ 数学上相同，但前者在 $p$ 下溢时得到 $\log 0 = -\infty$，后者用 $z_i - \text{LSE}(z)$ 计算。
-10. ✗ softmax 会饱和，所以分类器训练也会卡住 → ✓ 交叉熵的 log 抵消了饱和，错得越自信梯度越大；饱和的麻烦出在后面不接 log 的地方，如注意力。
-11. ✗ 注意力除以 $\sqrt{d_k}$ 是为了防溢出 → ✓ 是为了让点积方差回到 1、防止饱和；溢出靠减最大值解决。
-12. ✗ 二分类用 sigmoid 和用两类 softmax 是两回事 → ✓ 两类 softmax 就是 $\sigma(z_1 - z_2)$，sigmoid 只是省掉了冗余的自由度。
+5. ✗ 只有 logits 很大时才会算出 nan → ✓ 全都很负时也会：每一项都下溢成 0，得到 0 / 0。减最大值同时解决两种情况。
+6. ✗ 减最大值是一种近似 → ✓ 由平移不变性，结果完全相等，只是计算顺序不会溢出。
+7. ✗ softmax 的梯度就是 $p - y$ → ✓ $p - y$ 是 softmax 和交叉熵合起来对 logits 的梯度；softmax 自身的导数是 $J = \text{diag}(p) - pp^\top$。
+8. ✗ $\frac{\partial p_i}{\partial z_j}$ 只在 $i = j$ 时非零 → ✓ 分母含有全部的 $z$，非对角元是 $-p_i p_j$。
+9. ✗ softmax 会饱和，所以分类器训练也会卡住 → ✓ 交叉熵的 log 抵消了饱和，错得越自信梯度越大；饱和的麻烦出在后面不接 log 的地方，如注意力。
+10. ✗ 注意力除以 $\sqrt{d_k}$ 是为了防溢出 → ✓ 是为了让点积方差回到 1、防止饱和；溢出靠减最大值解决。
 
 </section>
 
@@ -756,34 +536,9 @@ $\sqrt{256} = 16$。缩放后的版本相当于对同一组点积用 $T = 16$ �
 <Back>one-hot（argmax）；标准 softmax；均匀分布。等价写法 $p_i(T) \propto p_i^{1/T}$。</Back>
 </Card>
 
-<Card id="lse">
-<Front>log-sum-exp 和 max 是什么关系？它的梯度是什么？</Front>
-<Back>$\max_j z_j \le \text{LSE}(z) \le \max_j z_j + \log K$，是 max 的平滑近似；$\nabla_z \text{LSE}(z) = \text{softmax}(z)$，所以 softmax 是 argmax 的平滑版本。</Back>
-</Card>
-
-<Card id="maxent">
-<Front>从最大熵的角度，softmax 的形式是怎么来的？</Front>
-<Back>在“期望得分 $\sum_i p_i z_i$ 固定”的约束下，熵最大的分布是 $p_i \propto e^{z_i / T}$，即 Boltzmann 分布，$T$ 来自拉格朗日乘子。</Back>
-</Card>
-
 <Card id="shift">
 <Front>为什么实现 softmax 时要先减最大值？结果会变吗？</Front>
-<Back>不变：$\text{softmax}(z + c\mathbf{1}) = \text{softmax}(z)$。减最大值后所有指数不大于 0，分母在 $[1, K]$ 之间，float32 下 $z$ 超过 88.72 时 $e^{z}$ 上溢成 inf 的问题就没有了。</Back>
-</Card>
-
-<Card id="sigmoid">
-<Front>两类 softmax 和 sigmoid 是什么关系？</Front>
-<Back>$p_1 = \frac{e^{z_1}}{e^{z_1} + e^{z_2}} = \sigma(z_1 - z_2)$。logits 有一个冗余的自由度，sigmoid 把它省掉了。</Back>
-</Card>
-
-<Card id="jacobian">
-<Front>写出 $\frac{\partial p_i}{\partial z_j}$ 和 Jacobian 的矩阵形式。对角和非对角元的符号是什么？</Front>
-<Back>$p_i(\delta_{ij} - p_j)$，$J = \text{diag}(p) - pp^\top$。对角 $p_i(1 - p_i)$ 为正，非对角 $-p_i p_j$ 为负。</Back>
-</Card>
-
-<Card id="jacobian-rows">
-<Front>softmax Jacobian 的每一行加起来是多少？为什么？</Front>
-<Back>0。$\sum_j J_{ij} = p_i(1 - \sum_j p_j) = 0$，对应平移不变性：所有 logits 同时加 $c$，$p$ 不变。</Back>
+<Back>不变：$\text{softmax}(z + c\mathbf{1}) = \text{softmax}(z)$。直接算时 float32 下 $z$ 超过 88.72 会上溢成 inf，全都低于约 $-104$ 会下溢成 0 / 0，都得到 nan；减最大值后最大的一项是 1，分母在 $[1, K]$ 之间，两种问题都没有了。</Back>
 </Card>
 
 <Card id="ce-grad">
@@ -791,9 +546,9 @@ $\sqrt{256} = 16$。缩放后的版本相当于对同一组点积用 $T = 16$ �
 <Back>$\nabla_z L = p - y$。这里是 $(0.7, -0.8, 0.1)$：真实类的 logit 被往上推，最离谱的第 1 类被压得最狠。</Back>
 </Card>
 
-<Card id="ce-fused">
-<Front>为什么框架把 softmax 和交叉熵合成一个接收 logits 的算子？</Front>
-<Back>省计算：梯度直接是 $p - y$，不用构造 Jacobian。更稳定：用 $\log p_i = z_i - \text{LSE}(z)$ 计算，不会因为 $p$ 下溢出现 $\log 0$。</Back>
+<Card id="jacobian">
+<Front>写出 softmax 的 Jacobian。对角和非对角元的符号是什么？</Front>
+<Back>$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j)$，$J = \text{diag}(p) - pp^\top$。对角 $p_i(1 - p_i)$ 为正，非对角 $-p_i p_j$ 为负。</Back>
 </Card>
 
 <Card id="saturation">
@@ -803,7 +558,7 @@ $\sqrt{256} = 16$。缩放后的版本相当于对同一组点积用 $T = 16$ �
 
 <Card id="ce-no-saturation">
 <Front>交叉熵会受 softmax 饱和影响吗？</Front>
-<Back>基本不会。$\frac{\partial L}{\partial p_i} = -\frac{y_i}{p_i}$ 抵消了 $J$ 的变小，梯度是 $p - y$：自信且对时接近 0，自信但错时接近 $\sqrt 2$。饱和的麻烦出在后面不接 log 的地方，如注意力。</Back>
+<Back>基本不会。交叉熵对真实类概率的导数 $-\frac{1}{p_{\text{真实类}}}$ 抵消了 $J$ 的变小，梯度是 $p - y$：自信且对时接近 0，自信但错时接近 $\sqrt 2$。饱和的麻烦出在后面不接 log 的地方，如注意力。</Back>
 </Card>
 
 <Card id="sqrt-dk">
@@ -812,5 +567,107 @@ $\sqrt{256} = 16$。缩放后的版本相当于对同一组点积用 $T = 16$ �
 </Card>
 
 </Flashcards>
+
+</section>
+
+<section id="appendix" className="kb-section">
+
+## 附录：两个梯度的推导
+
+正文只用到结论，这里补上推导。
+
+<Detail>
+
+<Anchor id="jac-formula" />
+
+### A. softmax 的 Jacobian
+
+沿用 $p_i = \frac{e^{z_i}}{S}$，$S = \sum_{k=1}^{K} e^{z_k}$，要求的是 $\frac{\partial p_i}{\partial z_j}$。$i$ 和 $j$ 是两个独立的下标，要分 $i = j$ 和 $i \ne j$ 两种情况。先算一个后面要用的小结果：$S$ 里只有 $e^{z_j}$ 那一项和 $z_j$ 有关，所以
+
+$$
+\frac{\partial S}{\partial z_j} = e^{z_j}
+$$
+
+$p_i$ 是分式，用商法则 $\left(\frac{u}{v}\right)' = \frac{u'v - uv'}{v^2}$，其中 $u = e^{z_i}$，$v = S$。
+
+**情况一：$i = j$。** $u$ 和 $v$ 对 $z_i$ 的导数都是 $e^{z_i}$：
+
+<Derivation>
+
+$$
+\frac{\partial p_i}{\partial z_i} = \frac{e^{z_i} \cdot S - e^{z_i} \cdot e^{z_i}}{S^2}
+$$
+
+$$
+= \frac{e^{z_i}}{S} - \frac{e^{z_i}}{S} \cdot \frac{e^{z_i}}{S} = p_i(1 - p_i)
+$$
+
+</Derivation>
+
+**情况二：$i \ne j$。** 分子 $e^{z_i}$ 里没有 $z_j$，导数为 0；分母的导数仍然是 $e^{z_j}$：
+
+$$
+\frac{\partial p_i}{\partial z_j} = \frac{0 \cdot S - e^{z_i} \cdot e^{z_j}}{S^2} = -\frac{e^{z_i}}{S} \cdot \frac{e^{z_j}}{S} = -p_i p_j
+$$
+
+用 Kronecker delta（$i = j$ 时 $\delta_{ij} = 1$，否则为 0）把两种情况合成一个式子：
+
+$$
+\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j)
+$$
+
+排成矩阵，第 $i$ 行第 $j$ 列放 $\frac{\partial p_i}{\partial z_j}$。以 $K = 3$ 为例：
+
+$$
+J = \begin{pmatrix}
+p_1(1-p_1) & -p_1 p_2 & -p_1 p_3 \\
+-p_2 p_1 & p_2(1-p_2) & -p_2 p_3 \\
+-p_3 p_1 & -p_3 p_2 & p_3(1-p_3)
+\end{pmatrix}
+$$
+
+$\delta_{ij}$ 那一项给出对角矩阵 $\text{diag}(p)$；$p_i p_j$ 那一项是列向量 $p$ 乘以行向量 $p^\top$ 的外积 $pp^\top$。所以
+
+$$
+J = \text{diag}(p) - pp^\top
+$$
+
+下面的演示里可以点 $J$ 的任意一格，对照代入过程和数值差分的结果。
+
+<JacobianDemo />
+
+<Anchor id="ce-derivation" />
+
+### B. 交叉熵的梯度
+
+$L = -\sum_i y_i \log p_i$ 通过所有的 $p_i$ 依赖于 $z_j$，用链式法则把每条路径加起来：
+
+$$
+\frac{\partial L}{\partial z_j} = \sum_{i=1}^{K} \frac{\partial L}{\partial p_i} \cdot \frac{\partial p_i}{\partial z_j}
+$$
+
+第一个因子是 $\frac{\partial L}{\partial p_i} = -\frac{y_i}{p_i}$，第二个因子是附录 A 的 $p_i(\delta_{ij} - p_j)$。代入：
+
+<Derivation>
+
+$$
+\frac{\partial L}{\partial z_j} = \sum_{i} \left(-\frac{y_i}{p_i}\right) p_i (\delta_{ij} - p_j) = -\sum_i y_i (\delta_{ij} - p_j)
+$$
+
+$$
+= -\sum_i y_i \delta_{ij} + p_j \sum_i y_i
+$$
+
+$$
+= -y_j + p_j
+$$
+
+</Derivation>
+
+第一行里 $p_i$ 正好约掉了。第二行的两项：$\delta_{ij}$ 只在 $i = j$ 时为 1，所以第一项的求和只剩 $y_j$；第二项里 $\sum_i y_i = 1$。写成向量就是 $\nabla_z L = p - y$。
+
+还有一条更短的路：$\log p_i = z_i - \log S$，所以 $L = \log S - z_{\text{真实类}}$。$\frac{\partial \log S}{\partial z_j} = \frac{e^{z_j}}{S} = p_j$，$z_{\text{真实类}}$ 对 $z$ 的梯度就是 $y$，两项相减同样得到 $p - y$。
+
+</Detail>
 
 </section>

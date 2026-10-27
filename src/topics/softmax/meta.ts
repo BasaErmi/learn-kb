@@ -13,7 +13,7 @@ export const meta: TopicMeta = {
     { id: 'step-2', title: '2 · 温度：为什么叫 soft max' },
     { id: 'step-3', title: '3 · 平移不变与数值稳定' },
     { id: 'step-4', title: '4 · 接上交叉熵：$p - y$' },
-    { id: 'step-5', title: '5 · 饱和与 $\\sqrt{d_k}$' },
+    { id: 'step-5', title: '5 · softmax 的饱和' },
     { id: 'cheatsheet', title: '公式速查' },
     { id: 'pitfalls', title: '易错点' },
     { id: 'flashcards', title: '自测卡片' },

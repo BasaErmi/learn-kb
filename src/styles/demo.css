@@ -140,4 +140,3 @@
 .kb-mat-cell { stroke: var(--card); stroke-width: 2; cursor: pointer; }
 .kb-mat-cell.is-hot { stroke: var(--ink); stroke-width: 2; }
 .kb-chart .kb-mat-val { font-family: var(--mono); font-size: 10.5px; fill: var(--ink); pointer-events: none; }
-.kb-num-table td.is-bad { color: var(--c-grad); font-weight: 600; }

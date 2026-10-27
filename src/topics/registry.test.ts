@@ -40,7 +40,7 @@ describe('registry', () => {
     for (const t of topics) expect(reaches(t.slug, t.slug), t.slug).toBe(false)
   })
   it('derives used-by from prereqs', () => {
-    expect(usedBy('softmax').map((t) => t.slug)).toEqual(['cfg', 'ldm'])
+    expect(usedBy('softmax').map((t) => t.slug)).toEqual(['cross-entropy', 'cfg', 'ldm'])
     expect(usedBy('ldm')).toEqual([])
   })
 })

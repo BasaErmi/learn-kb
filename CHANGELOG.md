@@ -1,7 +1,37 @@
 # 变更日志
 
 ## [2026-10-27] - Added
-- Softmax 第 1 步“网络输出的是 logits”加了一张嵌入示意图：猫的图片 → 特征 $h$ → 线性层 $z = Wh + b$ → 5 个类别各一个 logit。数值就是正文例子里的 $z = (2, 1, 0.5, -0.5, -1.5)$，负值标橙，并注明和为 1.5、还不是概率。相关文件：`src/topics/softmax/demos/LogitsFigure.tsx`、`src/topics/softmax/index.mdx`。
+- 新专题《交叉熵》（`cross-entropy`，机器学习基础 › 概率输出与损失，前置 Softmax，新标签“信息论”）。共 4 步：信息量与熵 → 交叉熵与 KL 散度 → 用在分类上（$-\log p_c$ 与最大似然）→ 为什么不用 MSE。
+  - 三个交互演示：熵（拖动 4 类天气分布，看每类对熵的贡献）、交叉熵 = 熵 + KL（同时调 $P$、$Q$，堆叠条显示分解，可交换 $P$、$Q$ 看不对称）、二分类 MSE 与交叉熵的梯度（梯度随 $z$ 的曲线和从 $z = -6$ 出发的梯度下降轨迹）。
+  - 计算在 `lib/crossEntropy.ts`，单元测试锁住了正文引用的全部数值。
+  - Softmax 第 4 步加了指向本专题第 3 步的链接；本专题第 3、4 步链回 Softmax 第 1、4 步。
+  - 相关文件：`src/topics/cross-entropy/`、`src/topics/registry.ts`、`src/topics/taxonomy.ts`、`tests/e2e/cross-entropy.spec.ts`、`scripts/publish-exclude.txt`。
+
+## [2026-10-27] - Changed
+- Softmax 总览重写：要点框只留定义和两条核心性质；导语改成从用途讲起、按“是什么 → 为什么叫 soft max → 用起来要过的两关”展开，不再提注意力。1.2 节先给出 softmax 的定义，再讲分子、分母各满足哪条要求，“为什么必须取指数”移到演示之前。
+
+## [2026-10-27] - Changed
+- Softmax 第 5 步改为以饱和为主线，标题改为“softmax 的饱和”。
+  - 新增 5.2「差值一大，分布就被锁死」：用 $(1002, 980)$ 和 $(1.002, 0.980)$ 两组相对差相同、绝对差差 1000 倍的 logits，说明 softmax 只看绝对差、对缩放敏感，并附一张左右对照的嵌入图（`ScaleFigure`）。
+  - 饱和一节补上与上面例子的衔接；交叉熵一节压短。
+  - 注意力压成最后一小节「例子：注意力里的 $\sqrt{d_k}$」，方差推导合成一行。
+  - 删除注意力缩放交互演示、模拟函数 `attentionSim` 及其测试，以及“为什么不直接除以维度”旁注。
+  - 容易混淆改为“饱和和溢出是两回事”，检验题换成 $p = (0.98, 0.01, 0.01)$ 的 Jacobian。单元测试锁住了新例子的数值。
+  - 相关文件：`src/topics/softmax/`、`tests/e2e/softmax.spec.ts`。
+
+## [2026-10-27] - Changed
+- Softmax 第 3 步重新梳理。
+  - 要点框改成三点：平移不变、直接算会出 nan、先减最大值。
+  - 正文保留平移不变的推导，并补出“取 $c = -m$”这一步，说明减最大值后的式子为什么和原式相等。
+  - 减最大值的效果分三点列出：分子不会上溢、分母不会是 0、个别项下溢无妨。
+  - 删除 float32 溢出交互演示和对应的 e2e 测试，以及只给它用的 `torchNum`、`.is-bad` 表格样式。
+  - 相关文件：`src/topics/softmax/index.mdx`、`src/topics/softmax/demos/`、`src/styles/demo.css`、`tests/e2e/softmax.spec.ts`。
+
+## [2026-10-27] - Changed
+- 所有专题总览里的“记号”改为默认收起，点标题展开：新增 `Notation` 组件，把记号表和后面讲记号的 Pitfall 一起包起来；交叉引用跳到里面的位置时会自动展开。CFG、LDM、Softmax 都已替换，skill 的页面模板也改成这种写法。相关文件：`src/kb/components/Notation.tsx`、`src/kb/mdx-components.tsx`、`src/styles/kb.css`、`src/topics/*/index.mdx`、`tests/e2e/kb.spec.ts`。
+
+## [2026-10-27] - Added
+- Softmax 第 1 步“网络输出的是 logits”加了一张嵌入示意图：输入图片（一张真实的猫照片，`public/images/softmax/cat.jpg`）→ 特征 $h$ → 线性层 $z = Wh + b$ → 5 个类别各一个 logit。数值就是正文例子里的 $z = (2, 1, 0.5, -0.5, -1.5)$，负值标橙，并注明和为 1.5、还不是概率。相关文件：`src/topics/softmax/demos/LogitsFigure.tsx`、`src/topics/softmax/index.mdx`。
 
 ## [2026-10-27] - Changed
 - 首页大标题改为“Guanlin 的知识库”，删掉标题下的导语和分隔横线，标签筛选上移到标题下方。相关文件：`src/app/HomePage.tsx`、`src/styles/base.css`。

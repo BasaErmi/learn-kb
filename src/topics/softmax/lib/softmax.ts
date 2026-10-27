@@ -1,4 +1,4 @@
-import { gaussian, mulberry32 } from '@/topics/cfg/lib/prng'
+import { mulberry32 } from '@/topics/cfg/lib/prng'
 
 /** 正文和演示共用的 5 类 logits（猫、狗、狐狸、兔子、汽车） */
 export const Z5 = [2, 1, 0.5, -0.5, -1.5]
@@ -99,42 +99,4 @@ export function sampleCounts(p: readonly number[], n: number, seed: number): num
     counts[i]++
   }
   return counts
-}
-
-export interface AttnMode {
-  /** 各个 query 的最大注意力权重的平均 */
-  meanMaxW: number
-  /** 各个 query 的 softmax Jacobian 的 Frobenius 范数的平均 */
-  meanJ: number
-  /** 第一个 query 对各个 key 的注意力权重，用来画柱状图 */
-  first: number[]
-}
-
-/**
- * 注意力分数的模拟：q、k 各分量独立取自 N(0, 1)，每个 query 对 nKeys 个 key 做 softmax。
- * 同一批向量分别算“不缩放”和“除以 √d_k”两种情况；scoreVar 是所有点积 q·k（未缩放）的样本方差。
- */
-export function attentionSim(dk: number, nKeys = 16, nQueries = 64, seed = 7): { scoreVar: number; raw: AttnMode; scaled: AttnMode } {
-  const rand = mulberry32(seed * 1000 + dk)
-  const vec = () => Array.from({ length: dk }, () => gaussian(rand))
-  const acc = () => ({ maxW: 0, j: 0, first: [] as number[] })
-  const raw = acc(), scaled = acc()
-  let sum = 0, sum2 = 0
-  for (let q = 0; q < nQueries; q++) {
-    const qv = vec()
-    const s = Array.from({ length: nKeys }, () => {
-      const kv = vec()
-      return qv.reduce((a, v, i) => a + v * kv[i], 0)
-    })
-    for (const v of s) { sum += v; sum2 += v * v }
-    for (const [m, scores] of [[raw, s], [scaled, s.map((v) => v / Math.sqrt(dk))]] as const) {
-      const p = softmax(scores)
-      if (q === 0) m.first = p
-      m.maxW += Math.max(...p)
-      m.j += frobenius(jacobian(p))
-    }
-  }
-  const n = nKeys * nQueries, mean = sum / n
-  const out = (m: ReturnType<typeof acc>): AttnMode => ({ meanMaxW: m.maxW / nQueries, meanJ: m.j / nQueries, first: m.first })
-  return { scoreVar: sum2 / n - mean * mean, raw: out(raw), scaled: out(scaled) }
 }

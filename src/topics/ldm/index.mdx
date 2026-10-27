@@ -38,7 +38,7 @@ $$
   { id: 'step-6', label: '到 DiT', sub: '只换去噪网络', kind: 'core' },
 ]} />
 
-### 记号
+<Notation>
 
 | 记号 | 含义 |
 | --- | --- |
@@ -57,6 +57,8 @@ $$
 本页的 $s$ 专指 latent 的**缩放系数**。<Ref topic="cfg" to="overview">CFG 专题</Ref>里 guidance scale 记作 $s$，这里为了不冲突改记作 $w$，公式是 $\hat\epsilon = \epsilon_\varnothing + w\,(\epsilon_y - \epsilon_\varnothing)$，$w = 1$ 表示不做 guidance。SD 默认的 7.5 就是这个约定下的值，不是 CFG 论文里 $(1+w)$ 那种约定。
 
 </Pitfall>
+
+</Notation>
 
 </section>
 

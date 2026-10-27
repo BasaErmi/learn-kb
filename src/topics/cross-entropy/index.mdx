@@ -1,0 +1,452 @@
+import { EntropyDemo } from './demos/EntropyDemo'
+import { CrossEntropyKLDemo } from './demos/CrossEntropyKLDemo'
+import { GradientCompareDemo } from './demos/GradientCompareDemo'
+
+<section id="overview" className="kb-section">
+
+## 总览与记号
+
+<KeyPoint>
+
+$$
+H(P, Q) = -\sum_{i=1}^{K} P_i \log Q_i
+$$
+
+$P$ 是真实分布，$Q$ 是模型预测的分布：交叉熵按 $Q$ 计算每个结果的信息量，再按 $P$ 加权平均。它可以拆成 $H(P, Q) = H(P) + D_{\text{KL}}(P \,\|\, Q)$，训练时 $H(P)$ 固定，所以最小化交叉熵就是让 $Q$ 靠近 $P$。放到分类问题里，$P$ 是 one-hot 标签，交叉熵只剩 $-\log p_c$。
+
+</KeyPoint>
+
+训练分类器时，需要一个数来衡量模型预测的分布离真实分布有多远，交叉熵就是最常用的那个。它来自信息论：先用信息量刻画一个结果有多意外，按真实概率取平均得到熵；再把信息量换成按模型的估计来算，就得到交叉熵，它比熵多出的那部分正是两个分布之间的差距。落到分类问题上，它化简成“正确类别概率的负对数”，既等价于最大似然，又和 sigmoid、softmax 配合得恰到好处，模型错得再离谱梯度也不会消失。
+
+<Roadmap legend={{ basis: '信息论', core: '用于训练' }} nodes={[
+  { id: 'step-1', label: '信息量与熵', sub: '平均意外程度', kind: 'basis' },
+  { id: 'step-2', label: '交叉熵与 KL', sub: '$H(P) + D_{\\text{KL}}$', kind: 'basis' },
+  { id: 'step-3', label: '用在分类上', sub: '$-\\log p_c$', kind: 'core' },
+  { id: 'step-4', label: '对比 MSE', sub: '梯度 $p - y$', kind: 'core' },
+]} />
+
+<Notation>
+
+| 记号 | 含义 |
+| --- | --- |
+| $K$ | 可能结果（类别）的个数 |
+| $P = (P_1, \dots, P_K)$ | 真实分布 |
+| $Q = (Q_1, \dots, Q_K)$ | 模型预测的分布；分类时就是模型输出的概率 $p$ |
+| $I(p) = -\log p$ | 概率为 $p$ 的结果的信息量 |
+| $H(P)$ | 熵 |
+| $H(P, Q)$ | 交叉熵 |
+| $D_{\text{KL}}(P \,\Vert\, Q)$ | KL 散度 |
+| $y$ | one-hot 标签，真实类别 $c$ 那一位是 1 |
+| $z$，$p = \sigma(z)$ | 二分类的 logit 和正类概率，$\sigma$ 是 sigmoid |
+| $\log$ | 不写底数时指自然对数 $\ln$ |
+
+</Notation>
+
+</section>
+
+<Step id="step-1" n={1} title="信息量与熵" gist="概率为 $p$ 的结果的信息量是 $-\log p$：越罕见越意外。熵是按真实概率加权的平均信息量，均匀分布时最大，确定的分布为 0。">
+
+<KeyPoint>
+
+$$
+I(p) = -\log p, \qquad H(P) = \sum_{i=1}^{K} P_i \cdot (-\log P_i) = -\sum_{i=1}^{K} P_i \log P_i
+$$
+
+概率越小，信息量越大，必然发生的结果信息量为 0。熵是信息量按真实概率的加权平均，衡量一个分布本身有多不确定：one-hot 分布的熵为 0，均匀分布的熵最大，为 $\log K$。
+
+</KeyPoint>
+
+<Detail>
+
+### 信息量：一个结果有多意外
+
+要衡量预测好不好，先得说清一个结果“有多出乎意料”。必然发生的事不带来任何新信息；越罕见的事发生了，越让人意外。设某个结果发生的概率是 $p$，定义它的**信息量**为
+
+$$
+I(p) = -\log p
+$$
+
+以 2 为底时，单位是 bit：
+
+| 概率 $p$ | 信息量 $-\log_2 p$ | 直观感受 |
+| --- | --- | --- |
+| $1$ | $0$ | 必然发生，毫无意外 |
+| $0.5$ | $1$ | 抛硬币，有一点意外 |
+| $0.01$ | $\approx 6.64$ | 很罕见，非常意外 |
+
+这个定义满足两条我们想要的性质：
+
+- 概率越小，信息量越大；必然事件的信息量为 0。
+- 独立事件的信息量相加。两个独立事件同时发生的概率是 $p_1 p_2$，而 $-\log(p_1 p_2) = -\log p_1 - \log p_2$。要取 log，正是为了把概率的“相乘”变成信息量的“相加”。
+
+换对数的底只相当于乘一个常数（$\log_2 x = \frac{\ln x}{\ln 2}$），不影响任何结论。深度学习里习惯用自然对数，单位叫 nat；本页后面的 $\log$ 都指 $\ln$。
+
+### 熵：平均意外程度
+
+设一个随机变量有 $K$ 种可能的结果，真实分布是 $P = (P_1, \dots, P_K)$。每次得到第 $i$ 种结果的概率是 $P_i$，它的信息量是 $-\log P_i$。按真实概率加权平均，就得到**熵**：
+
+$$
+H(P) = \sum_{i=1}^{K} P_i \cdot (-\log P_i) = -\sum_{i=1}^{K} P_i \log P_i
+$$
+
+它有两个极端：
+
+- one-hot 分布：结果完全确定，熵为 0。这里约定 $0 \log 0 = 0$：概率为 0 的结果从不出现，不贡献信息。
+- 均匀分布：最不确定，熵取最大值 $\log K$。
+
+比如某地晴、多云、雨、雪的概率是 $P = (0.5, 0.25, 0.15, 0.1)$，它的熵是 $H(P) \approx 1.208$，低于四类均匀分布的上限 $\ln 4 \approx 1.386$：晴天占了一半，结果比较好猜。
+
+<Aside title="熵与编码长度">
+
+以 2 为底时，熵有一个具体的含义：知道真实分布、并据此设计最优编码（越常见的结果用越短的码），平均每个结果至少要用 $H(P)$ 个 bit。下一步的交叉熵，对应的就是按一个不准确的分布设计编码时的平均长度。
+
+</Aside>
+
+<EntropyDemo />
+
+</Detail>
+
+<Pitfall>
+
+熵只由分布本身决定，描述的是“这件事本身有多难猜”，和模型猜得好不好无关。训练时真实分布由数据给定，它的熵是一个常数，<Ref to="step-2">第 2 步</Ref>会用到这一点。
+
+</Pitfall>
+
+<Quiz>
+
+四类均匀分布的熵是多少 bit？只有一类、概率为 1 的分布呢？
+
+<Answer>
+
+均匀分布每类的信息量都是 $-\log_2 \frac{1}{4} = 2$ bit，平均也是 2 bit，即 $\log_2 4$。只有一类时那一类的信息量是 $-\log_2 1 = 0$，其余各类概率为 0、不贡献，熵为 0。
+
+</Answer>
+
+</Quiz>
+
+熵是用真实分布自己来算信息量的。可模型并不知道真实分布，只能用自己的估计去算，下一步看看这样会多付出多少。
+
+</Step>
+
+<Step id="step-2" n={2} title="交叉熵与 KL 散度" gist="交叉熵用模型分布 $Q$ 算信息量、按真实分布 $P$ 加权：$H(P, Q) = H(P) + D_{\text{KL}}(P \,\|\, Q)$。$H(P)$ 与模型无关，所以最小化交叉熵就是让 $Q$ 靠近 $P$。">
+
+<KeyPoint>
+
+$$
+H(P, Q) = -\sum_{i=1}^{K} P_i \log Q_i = H(P) + D_{\text{KL}}(P \,\|\, Q)
+$$
+
+$$
+D_{\text{KL}}(P \,\|\, Q) = \sum_{i=1}^{K} P_i \log \frac{P_i}{Q_i} \ge 0
+$$
+
+KL 散度等于 0 当且仅当 $Q = P$。训练时 $H(P)$ 是常数，所以最小化交叉熵、最小化 KL 散度、让 $Q$ 尽量接近 $P$，三者是一回事。交叉熵不对称，$H(P, Q) \ne H(Q, P)$。
+
+</KeyPoint>
+
+<Detail>
+
+### 交叉熵：按模型的估计算信息量
+
+现在真实分布仍是 $P$，但我们手里只有一个估计 $Q$（比如模型的预测），只能按 $Q$ 去算每个结果的信息量 $-\log Q_i$。结果实际上还是按 $P$ 出现的，所以平均下来是
+
+$$
+H(P, Q) = -\sum_{i=1}^{K} P_i \log Q_i
+$$
+
+这就是**交叉熵**。“交叉”指的是两个分布交叉在同一个式子里：权重用真实分布 $P$，信息量用估计分布 $Q$。和熵并排放在一起：
+
+$$
+H(P) = -\sum_{i} P_i \log P_i, \qquad H(P, Q) = -\sum_{i} P_i \log Q_i
+$$
+
+区别只在 log 里面是 $P_i$ 还是 $Q_i$，$Q = P$ 时交叉熵就退回熵。
+
+两个分布在式子里的角色不同，所以交叉熵不对称。还是<Ref to="step-1">上一步</Ref>的天气，真实分布 $P = (0.5, 0.25, 0.15, 0.1)$，而模型给出 $Q = (0.05, 0.35, 0.3, 0.3)$，几乎不看好晴天。晴天恰恰最常见，按 $P$ 加权时这一项罚得很重，单这一项就有 $-0.5 \ln 0.05 \approx 1.498$；整体 $H(P, Q) \approx 2.061$，而交换两者得到的 $H(Q, P) \approx 1.780$。
+
+### KL 散度：多付出的代价
+
+交叉熵永远不小于熵：
+
+$$
+H(P, Q) \ge H(P)
+$$
+
+等号当且仅当 $Q = P$。用不准确的分布去估计，平均意外程度一定更高。两者之差叫 **KL 散度**（Kullback–Leibler divergence）：
+
+$$
+\begin{aligned}
+D_{\text{KL}}(P \,\|\, Q) &= H(P, Q) - H(P) \\
+&= -\sum_i P_i \log Q_i + \sum_i P_i \log P_i \\
+&= \sum_i P_i \log \frac{P_i}{Q_i} \ \ge 0
+\end{aligned}
+$$
+
+<Aside title="KL 散度为什么非负">
+
+$\log$ 是凹函数，由 Jensen 不等式，$\sum_i P_i \log \frac{Q_i}{P_i} \le \log \sum_i P_i \frac{Q_i}{P_i} \le \log 1 = 0$，左边正是 $-D_{\text{KL}}$。等号要求 $\frac{Q_i}{P_i}$ 处处相同，也就是 $Q = P$。这个结论也叫吉布斯不等式。
+
+</Aside>
+
+把定义移项，交叉熵就拆成了两部分：
+
+$$
+H(P, Q) = H(P) + D_{\text{KL}}(P \,\|\, Q)
+$$
+
+上面的例子里，$H(P) \approx 1.208$，$D_{\text{KL}}(P \,\|\, Q) \approx 0.853$，加起来正是 $2.061$。
+
+关键在于：训练时真实分布 $P$ 由数据给定，$H(P)$ 是常数，和模型参数无关。所以
+
+$$
+\min_{Q} H(P, Q) \iff \min_{Q} D_{\text{KL}}(P \,\|\, Q) \iff Q \text{ 尽量接近 } P
+$$
+
+这就是交叉熵能当损失函数的根本原因：它比熵多出的部分，正好衡量模型的预测离真实分布有多远。
+
+<CrossEntropyKLDemo />
+
+</Detail>
+
+<Pitfall>
+
+KL 散度和交叉熵一样不对称：上面的例子里 $D_{\text{KL}}(P \,\|\, Q) \approx 0.853$，$D_{\text{KL}}(Q \,\|\, P) \approx 0.540$。它衡量的是“用 $Q$ 代替 $P$ 多付出的代价”，严格说不是距离。另外，只要有一类 $P_i > 0$ 而 $Q_i = 0$，交叉熵和 KL 散度就是无穷大。
+
+</Pitfall>
+
+<Quiz>
+
+模型什么都不知道，给出均匀分布 $Q = (\frac{1}{4}, \frac{1}{4}, \frac{1}{4}, \frac{1}{4})$。对上面的天气分布 $P$，交叉熵和 KL 散度各是多少？
+
+<Answer>
+
+$H(P, Q) = -\sum_i P_i \log \frac{1}{4} = \ln 4 \approx 1.386$。$Q$ 均匀时，不管 $P$ 是什么，交叉熵都等于 $\log K$。KL 散度是 $1.386 - 1.208 = 0.178$。
+
+</Answer>
+
+</Quiz>
+
+到这里 $P$ 可以是任意分布。分类问题里真实分布很特殊，只有一个类别的概率为 1，交叉熵会化简得非常彻底。
+
+</Step>
+
+<Step id="step-3" n={3} title="用在分类上" gist="真实分布是 one-hot 标签，交叉熵只剩一项 $L = -\log p_c$：模型给正确类别的概率越低，惩罚越重。对整个训练集求和，它就是负对数似然。">
+
+<KeyPoint>
+
+$$
+L = H(y, p) = -\sum_{i=1}^{K} y_i \log p_i = -\log p_c
+$$
+
+交叉熵损失就是模型给正确类别分配的概率取负对数。所有样本的损失加起来是负对数似然，所以用交叉熵训练分类器等价于最大似然估计。
+
+</KeyPoint>
+
+<Detail>
+
+### 交叉熵损失只剩一项
+
+分类网络对每个样本输出一个概率分布 $p$（多分类时是 softmax 的输出，见<Ref topic="softmax" to="step-1">Softmax 第 1 步</Ref>），它扮演 $Q$ 的角色。真实分布 $P$ 则是 one-hot 标签 $y$：真实类别 $c$ 那一位是 1，其余都是 0，比如 $K = 3$、$c = 2$ 时 $y = (0, 1, 0)$。代入交叉熵：
+
+$$
+L = H(y, p) = -\sum_{i=1}^{K} y_i \log p_i
+$$
+
+求和里只有 $i = c$ 那一项不为 0，所以
+
+$$
+L = -\log p_c
+$$
+
+也就是说，**交叉熵损失 = 模型给正确答案的概率，取负对数**。比如 $p = (0.7, 0.2, 0.1)$、真实类别 $c = 2$ 时，$L = -\ln 0.2 \approx 1.61$。模型改进到 $p_2 = 0.9$ 时，$L = -\ln 0.9 \approx 0.105$；退步到 $p_2 = 0.01$ 时，$L = -\ln 0.01 \approx 4.61$。预测越错，惩罚增长得越快，$p_c \to 0$ 时 $L \to \infty$。
+
+$L$ 只看 $p_c$，错误的几类之间概率怎么分，不影响损失。另外 one-hot 分布的熵 $H(y) = 0$，所以这里交叉熵恰好等于 KL 散度：$L = D_{\text{KL}}(y \,\|\, p)$。
+
+### 另一个视角：最大似然
+
+设训练集有 $N$ 个样本，第 $n$ 个样本的真实类别是 $c_n$，模型参数为 $\theta$，模型给这个样本的真实类别分配的概率是 $p_{c_n}(\theta)$。样本之间相互独立时，模型给训练集里实际出现的这组标签分配的概率是各样本概率之积，叫做**似然**：
+
+$$
+\prod_{n=1}^{N} p_{c_n}(\theta)
+$$
+
+最大似然估计（MLE）就是找让它最大的 $\theta$。连乘不好处理，$N$ 一大还会下溢成 0；log 是单调函数，取 log 后最大值点不变，连乘也变成了连加。再加一个负号，把最大化变成最小化：
+
+$$
+\max_\theta \prod_{n=1}^{N} p_{c_n}(\theta) \iff \max_\theta \sum_{n=1}^{N} \log p_{c_n}(\theta) \iff \min_\theta \Big( -\sum_{n=1}^{N} \log p_{c_n}(\theta) \Big)
+$$
+
+右边正是所有样本的交叉熵损失之和。所以**用交叉熵训练分类器，就是在做最大似然估计**。PyTorch 的 `F.cross_entropy` 就是 `log_softmax` 加上 `nll_loss`，后者的名字来自 negative log-likelihood（负对数似然）。信息论和统计两条路，走到了同一个式子。
+
+</Detail>
+
+<Pitfall>
+
+似然不是“所有样本都被预测正确的概率”，而是模型给训练集里实际出现的标签分配的概率之积。模型给每个样本的真实类别 0.6 的概率，每个样本都“预测对了”，但似然仍是 $0.6^N$，远小于 1。
+
+</Pitfall>
+
+<Quiz>
+
+一个批次里有两个样本，模型给它们真实类别的概率分别是 0.5 和 0.25。交叉熵损失之和是多少？对应的似然是多少？
+
+<Answer>
+
+损失之和是 $-\ln 0.5 - \ln 0.25 = \ln 8 \approx 2.079$。似然是 $0.5 \times 0.25 = 0.125$，正好等于 $e^{-2.079}$：损失之和就是负对数似然。
+
+</Answer>
+
+</Quiz>
+
+交叉熵在信息论和统计上都说得通。但分类时也可以直接拿预测概率和标签做均方误差（MSE），为什么不用它？答案在梯度上。
+
+</Step>
+
+<Step id="step-4" n={4} title="为什么不用 MSE" gist="sigmoid 加 MSE 的梯度多出一个因子 $p(1 - p)$，模型错得越离谱反而越学不动；交叉熵的 log 正好把它约掉，梯度只剩 $p - y$。">
+
+<KeyPoint>
+
+$$
+\frac{\partial L_{\text{MSE}}}{\partial z} = (p - y)\, p(1 - p), \qquad \frac{\partial L_{\text{CE}}}{\partial z} = p - y
+$$
+
+二分类、$p = \sigma(z)$ 时，MSE 的梯度多出 sigmoid 的导数 $p(1 - p)$，$p$ 接近 0 或 1 时它趋于 0，包括模型错得很自信的时候；交叉熵的 log 把这个因子约掉了，错得越离谱，梯度越大。
+
+</KeyPoint>
+
+<Detail>
+
+### 两种损失的梯度
+
+看最简单的二分类：模型输出一个 logit $z$，正类的概率是 $p = \sigma(z) = \frac{1}{1 + e^{-z}}$，标签 $y$ 取 0 或 1。sigmoid 的导数是 $\sigma'(z) = p(1 - p)$。
+
+用 MSE，$L_{\text{MSE}} = \frac{1}{2}(p - y)^2$，由链式法则：
+
+$$
+\frac{\partial L_{\text{MSE}}}{\partial z} = \frac{\partial L_{\text{MSE}}}{\partial p} \cdot \frac{\partial p}{\partial z} = (p - y)\, p(1 - p)
+$$
+
+用交叉熵，二分类的形式是 $L_{\text{CE}} = -[y \log p + (1 - y) \log(1 - p)]$：
+
+$$
+\begin{aligned}
+\frac{\partial L_{\text{CE}}}{\partial z} &= -\Big( \frac{y}{p} - \frac{1 - y}{1 - p} \Big) \cdot p(1 - p) \\
+&= -\big( y(1 - p) - (1 - y)\,p \big) \\
+&= p - y
+\end{aligned}
+$$
+
+log 求导带出的 $\frac{1}{p}$ 和 $\frac{1}{1 - p}$，正好约掉了 sigmoid 的导数 $p(1 - p)$。
+
+### 错得越离谱，MSE 越学不动
+
+设真实标签 $y = 1$，而模型错得很离谱：$z = -6$，$p \approx 0.0025$。这时
+
+- 交叉熵的梯度 $p - y \approx -0.9975$，几乎是最大的；
+- MSE 的梯度 $(p - y)\, p(1 - p) \approx -0.0025$，被 $p(1 - p)$ 压得接近 0。
+
+两者相差约 400 倍。从 $z = -6$ 出发、用同样的学习率 1 做梯度下降，交叉熵 17 步就把 $p$ 推过 0.9，MSE 要 497 步：模型错了，却几乎学不动。
+
+<GradientCompareDemo />
+
+多分类时也一样，softmax 加交叉熵对 logits 的梯度同样是 $p - y$，见<Ref topic="softmax" to="step-4">Softmax 第 4 步</Ref>。两处是同一个现象：交叉熵的 log 正好抵消了 sigmoid、softmax 里的 exp 带来的饱和。
+
+</Detail>
+
+<Pitfall>
+
+MSE 的梯度方向并没有错，它和 $p - y$ 同号；问题出在大小。$p(1 - p)$ 在 $p$ 接近 0 或 1 时趋于 0，而“错得很自信”恰好就是这种情况，最需要纠正的样本反而得不到梯度。
+
+</Pitfall>
+
+<Quiz>
+
+真实标签 $y = 0$，模型给出 $z = 5$（$p \approx 0.993$）。两种损失的梯度各是多少？
+
+<Answer>
+
+交叉熵：$p - y \approx 0.993$。MSE：$(p - y)\, p(1 - p) \approx 0.993 \times 0.993 \times 0.0067 \approx 0.0066$，小了约 150 倍。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<section id="cheatsheet" className="kb-section">
+
+## 公式速查
+
+| 含义 | 公式 |
+| --- | --- |
+| 信息量 | $I(p) = -\log p$ |
+| 熵 | $H(P) = -\sum_i P_i \log P_i$，$0 \le H(P) \le \log K$ |
+| 交叉熵 | $H(P, Q) = -\sum_i P_i \log Q_i$ |
+| KL 散度 | $D_{\text{KL}}(P \,\Vert\, Q) = \sum_i P_i \log \frac{P_i}{Q_i} \ge 0$ |
+| 分解 | $H(P, Q) = H(P) + D_{\text{KL}}(P \,\Vert\, Q)$ |
+| 分类损失 | $L = -\sum_i y_i \log p_i = -\log p_c$ |
+| 负对数似然 | $-\sum_{n} \log p_{c_n}(\theta)$，最小化它就是 MLE |
+| 二分类交叉熵 | $L_{\text{CE}} = -[y \log p + (1 - y)\log(1 - p)]$，$p = \sigma(z)$ |
+| 两种梯度 | $\frac{\partial L_{\text{MSE}}}{\partial z} = (p - y)\,p(1 - p)$，$\frac{\partial L_{\text{CE}}}{\partial z} = p - y$ |
+
+</section>
+
+<section id="pitfalls" className="kb-section">
+
+## 易错点
+
+1. ✗ $H(P, Q) = H(Q, P)$ → ✓ 不对称：权重用 $P$，信息量用 $Q$，两者交换后结果一般不同。
+2. ✗ KL 散度是两个分布之间的距离 → ✓ 它也不对称，衡量的是“用 $Q$ 代替 $P$ 多付出的代价”。
+3. ✗ 交叉熵就是 KL 散度 → ✓ 两者差一个 $H(P)$；只有 $P$ 是 one-hot 时 $H(P) = 0$，两者才相等。但 $H(P)$ 与模型无关，优化哪一个都一样。
+4. ✗ 用 $\ln$ 还是 $\log_2$ 会影响结论 → ✓ 换底只乘一个常数，最小值点不变。
+5. ✗ 似然是所有样本都被预测正确的概率 → ✓ 是模型给实际出现的标签分配的概率之积。
+6. ✗ MSE 的梯度方向不对，所以分类时不好用 → ✓ 方向是对的，但大小多乘了 $p(1 - p)$，错得越自信梯度越接近 0。
+
+</section>
+
+<section id="flashcards" className="kb-section">
+
+## 自测卡片
+
+点击卡片翻面，勾选“已掌握”后会记在浏览器里，下次可以只看没掌握的。
+
+<Flashcards topic="cross-entropy">
+
+<Card id="info">
+<Front>信息量为什么定义成 $-\log p$？</Front>
+<Back>概率越小信息量越大，必然事件为 0；而且独立事件的信息量相加：$-\log(p_1 p_2) = -\log p_1 - \log p_2$。</Back>
+</Card>
+
+<Card id="entropy-range">
+<Front>写出熵的定义。什么分布的熵最大、最小？</Front>
+<Back>$H(P) = -\sum_i P_i \log P_i$。均匀分布最大，为 $\log K$；one-hot 分布最小，为 0（约定 $0 \log 0 = 0$）。</Back>
+</Card>
+
+<Card id="ce-def">
+<Front>写出交叉熵的定义，“交叉”指什么？</Front>
+<Back>$H(P, Q) = -\sum_i P_i \log Q_i$。权重用真实分布 $P$，信息量用估计分布 $Q$，两个分布交叉在同一个式子里。</Back>
+</Card>
+
+<Card id="kl-decomp">
+<Front>交叉熵、熵和 KL 散度是什么关系？为什么最小化交叉熵能让 $Q$ 靠近 $P$？</Front>
+<Back>$H(P, Q) = H(P) + D_{\text{KL}}(P \,\|\, Q)$，$D_{\text{KL}} \ge 0$，等号当且仅当 $Q = P$。训练时 $H(P)$ 是常数，最小化交叉熵就是最小化 KL 散度。</Back>
+</Card>
+
+<Card id="ce-classify">
+<Front>分类问题里交叉熵损失化简成什么？$p_c = 0.2$ 时等于多少？</Front>
+<Back>$L = -\log p_c$，只看模型给正确类别的概率。$-\ln 0.2 \approx 1.61$。</Back>
+</Card>
+
+<Card id="mle">
+<Front>交叉熵和最大似然估计是什么关系？</Front>
+<Back>所有样本的交叉熵之和 $-\sum_n \log p_{c_n}(\theta)$ 就是负对数似然，最小化它等价于最大化似然 $\prod_n p_{c_n}(\theta)$。</Back>
+</Card>
+
+<Card id="mse-vs-ce">
+<Front>二分类用 sigmoid 时，MSE 和交叉熵对 logit 的梯度各是什么？为什么 MSE 不好？</Front>
+<Back>MSE：$(p - y)\,p(1 - p)$；交叉熵：$p - y$。$p$ 接近 0 或 1 时 $p(1 - p) \to 0$，模型错得很自信时 MSE 几乎没有梯度。</Back>
+</Card>
+
+</Flashcards>
+
+</section>

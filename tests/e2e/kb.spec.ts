@@ -219,3 +219,14 @@ test('a failed topic chunk shows a recoverable error instead of a blank page', a
   await expect(page.getByText('页面出错了')).toBeVisible()
   await expect(page.getByRole('link', { name: '返回知识库首页' })).toBeVisible()
 })
+
+test('notation is collapsed by default and expands on click in every topic', async ({ page }) => {
+  for (const slug of ['cfg', 'ldm', 'softmax', 'cross-entropy']) {
+    await page.goto(`./#/t/${slug}`)
+    const box = page.locator('#overview .kb-notation')
+    await expect(box).not.toHaveAttribute('open')
+    await expect(box.locator('table')).toBeHidden()
+    await box.locator('summary').click()
+    await expect(box.locator('table')).toBeVisible()
+  }
+})

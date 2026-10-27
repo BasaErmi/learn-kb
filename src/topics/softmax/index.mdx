@@ -1,11 +1,10 @@
 import { LogitsFigure } from './demos/LogitsFigure'
 import { SoftmaxDemo } from './demos/SoftmaxDemo'
 import { TemperatureDemo } from './demos/TemperatureDemo'
-import { StabilityDemo } from './demos/StabilityDemo'
 import { JacobianDemo } from './demos/JacobianDemo'
 import { CrossEntropyDemo } from './demos/CrossEntropyDemo'
+import { ScaleFigure } from './demos/ScaleFigure'
 import { SaturationDemo } from './demos/SaturationDemo'
-import { AttentionScaleDemo } from './demos/AttentionScaleDemo'
 
 <section id="overview" className="kb-section">
 
@@ -17,21 +16,21 @@ $$
 p_i = \text{softmax}(z)_i = \frac{e^{z_i}}{\sum_{j=1}^{K} e^{z_j}}
 $$
 
-取指数让每一项变成正数，除以总和让它们加起来为 1，任意一组实数就变成了概率分布。和交叉熵合用时，损失对 logits 的梯度只剩 $p - y$；需要提防的是分布接近 one-hot 时，softmax 自身的梯度几乎为 0。
+softmax 把任意一组实数变成概率分布：取指数让每一项为正，除以总和让它们加起来为 1。它只看 logits 之间的差，是“取最大值”（argmax）的平滑版本。
 
 </KeyPoint>
 
-网络最后一层输出的是一组没有约束的实数，softmax 把它们变成概率。给 logits 除以一个温度，它就在 argmax 和均匀分布之间连续变化，这是名字里 soft 的由来；它只看 logits 之间的差，所以实现时可以先减去最大值防止溢出。训练时它和交叉熵合在一起，梯度只剩 $p - y$；但分布太尖时 softmax 自身的梯度会消失，注意力里除以 $\sqrt{d_k}$ 就是为此。两处梯度的推导放在页末的附录。点击节点可以跳到对应的步骤。
+分类网络的输出层、语言模型预测下一个词，最后一步用的几乎都是 softmax。网络最后一层输出的是 $K$ 个任意实数，称为 logits；要当成概率用，就得先把它们变成非负、加起来为 1 的一组数，softmax 是做这件事的标准方法。它叫 soft max，是因为它是“取最大值”的平滑版本：logits 之间拉得越开，概率就越集中到最大的那一类上。真正用起来还要过两关：前向计算时指数容易溢出，好在 softmax 只看 logits 之间的差，先减去最大值就能避免；反向求梯度时，它和交叉熵合在一起梯度格外简单，但单独看，分布太尖时它几乎传不回梯度。
 
 <Roadmap legend={{ goal: '定义', basis: '性质', core: '梯度' }} nodes={[
   { id: 'step-1', label: '定义', sub: 'logits → 概率', kind: 'goal' },
   { id: 'step-2', label: '温度', sub: 'soft 的由来', kind: 'basis' },
   { id: 'step-3', label: '平移不变', sub: '先减最大值', kind: 'basis' },
   { id: 'step-4', label: '交叉熵', sub: '梯度 $p - y$', kind: 'core' },
-  { id: 'step-5', label: '饱和', sub: '注意力的 $\\sqrt{d_k}$', kind: 'core' },
+  { id: 'step-5', label: '饱和', sub: '梯度消失', kind: 'core' },
 ]} />
 
-### 记号
+<Notation>
 
 | 记号 | 含义 |
 | --- | --- |
@@ -51,6 +50,8 @@ logit 原本指 log-odds，即 $\log \frac{p}{1-p}$。深度学习里把送进 s
 
 </Pitfall>
 
+</Notation>
+
 </section>
 
 <Step id="step-1" n={1} title="从 logits 到概率" gist="先取指数让每一项为正，再除以总和归一化：任意一组实数都能变成概率分布，而且大小顺序不变。">
@@ -58,7 +59,7 @@ logit 原本指 log-odds，即 $\log \frac{p}{1-p}$。深度学习里把送进 s
 <KeyPoint>
 
 $$
-p_i = \frac{e^{z_i}}{S}, \qquad S = \sum_{k=1}^{K} e^{z_k}
+p_i = \frac{e^{z_i}}{\sum_{k=1}^{K} e^{z_k}}
 $$
 
 输出的每一项都在 $(0, 1)$ 之间，总和为 1。**指数保证非负，归一化保证和为 1。** 指数是单调递增的，所以 $z$ 越大 $p$ 越大；两类的概率之比只由 logit 之差决定：$\frac{p_i}{p_j} = e^{z_i - z_j}$。
@@ -79,20 +80,29 @@ $$
 
 ### 先取指数，再归一化
 
-softmax 分两步完成。第一步取指数 $e^{z_i}$：不管 $z_i$ 是正是负，结果都大于 0，而且指数单调递增，大小顺序保持不变。第二步除以总和 $S = \sum_k e^{z_k}$，让所有项加起来为 1。
+softmax 就是同时满足这三点的标准做法：把每个 logit 取指数，再除以所有指数的总和。写成公式是
+
+$$
+p_i = \text{softmax}(z)_i = \frac{e^{z_i}}{\sum_{k=1}^{K} e^{z_k}}, \qquad i = 1, \dots, K
+$$
+
+分子和分母各管一件事，正好对上上面的三点要求：
+
+- **分子取指数** $e^{z_i}$：不管 $z_i$ 是正是负，结果都大于 0，满足非负；指数单调递增，$z$ 越大结果越大，大小顺序不变。
+- **分母除以总和** $S = \sum_k e^{z_k}$：每一项都除以同一个正数，大小顺序仍然不变，而所有项加起来正好是 $\frac{S}{S} = 1$。
 
 <Anchor id="z5-example" />
 
-用一个五分类的例子算一遍。一张猫的图片，网络对“猫、狗、狐狸、兔子、汽车”给出的 logits 是 $z = (2, 1, 0.5, -0.5, -1.5)$：
+用一个五分类的例子算一遍。一张猫的图片，网络对“猫、狗、狐狸、兔子、汽车”给出的 logits 是 $z = (2, 1, 0.5, -0.5, -1.5)$。先逐项取指数，再除以总和：
 
 $$
 \begin{aligned}
 e^{z} &= (7.389,\ 2.718,\ 1.649,\ 0.607,\ 0.223), \qquad S = 12.586 \\
-p &= (0.587,\ 0.216,\ 0.131,\ 0.048,\ 0.018)
+p &= \frac{e^{z}}{S} = (0.587,\ 0.216,\ 0.131,\ 0.048,\ 0.018)
 \end{aligned}
 $$
 
-猫和狗的 logit 差 1，概率之比就是 $e^{1} \approx 2.72$（$\frac{0.587}{0.216} \approx 2.72$）。一般地，
+五个概率都在 $(0, 1)$ 之间，加起来为 1，顺序和 logits 一致。再看相邻两类：猫和狗的 logit 差 1，概率之比是 $\frac{0.587}{0.216} \approx 2.72 = e^{1}$。这不是巧合，一般地，
 
 $$
 \frac{p_i}{p_j} = \frac{e^{z_i} / S}{e^{z_j} / S} = e^{z_i - z_j}
@@ -100,9 +110,9 @@ $$
 
 分母 $S$ 约掉了，概率之比只取决于 logit 之差。指数还会把差距放大：logit 每差 1，概率就差 $e$ 倍。
 
-<SoftmaxDemo />
+既然归一化已经保证了总和为 1，取指数这一步能不能省掉？不取指数、直接算 $\frac{z_i}{\sum_j z_j}$，上面这组 logits 会得到 $(1.33,\ 0.67,\ 0.33,\ -0.33,\ -1.00)$：加起来确实是 1，但有负数，也有大于 1 的项，不是概率分布；$\sum_j z_j$ 接近 0 时还会除以 0。归一化只能保证总和为 1，非负性要靠指数。下面的演示可以在两种做法之间切换。
 
-演示里切到“直接除以总和”，就能看到为什么第一步非取指数不可。不取指数、直接算 $\frac{z_i}{\sum_j z_j}$，上面这组 logits 会得到 $(1.33,\ 0.67,\ 0.33,\ -0.33,\ -1.00)$：加起来确实是 1，但有负数，也有大于 1 的项，不是概率分布；$\sum_j z_j$ 接近 0 时还会除以 0。归一化只能保证总和为 1，非负性要靠指数。
+<SoftmaxDemo />
 
 </Detail>
 
@@ -228,11 +238,15 @@ softmax 平滑的是 **argmax**（输出一个 one-hot 向量），不是 max（
 
 <KeyPoint>
 
+- **平移不变**：所有 logits 加同一个常数，结果不变，$\text{softmax}(z + c\mathbf{1}) = \text{softmax}(z)$。
+- **直接算会出 nan**：logit 太大时 $e^{z}$ 上溢成 inf，全都很负时又全部下溢成 0。
+- **先减最大值**：取 $c = -m$，$m = \max_j z_j$，
+
 $$
-\text{softmax}(z + c\mathbf{1}) = \text{softmax}(z)
+p_i = \frac{e^{z_i - m}}{\sum_j e^{z_j - m}}
 $$
 
-直接按定义算，logit 太大时 $e^{z}$ 上溢成 inf，全都很负时又会全部下溢成 0，两种情况都得到 nan。实现时先减去最大值 $m = \max_j z_j$：$p_i = \frac{e^{z_i - m}}{\sum_j e^{z_j - m}}$，结果完全不变，两种问题都不会出现。
+结果完全不变，最大的一项是 $e^0 = 1$，两种问题都不会出现。
 
 </KeyPoint>
 
@@ -240,26 +254,34 @@ $$
 
 ### 加同一个常数，结果不变
 
-给所有 logits 加上同一个常数 $c$（$\mathbf{1}$ 是全 1 向量），分子分母都多出一个因子 $e^{c}$：
+给所有 logits 加上同一个常数 $c$（$\mathbf{1}$ 是全 1 向量），分子分母都多出一个因子 $e^{c}$，正好约掉：
 
 $$
 \frac{e^{z_i + c}}{\sum_j e^{z_j + c}} = \frac{e^{c}\, e^{z_i}}{e^{c} \sum_j e^{z_j}} = \frac{e^{z_i}}{\sum_j e^{z_j}}
 $$
 
-这和<Ref to="step-1">第 1 步</Ref>的 $\frac{p_i}{p_j} = e^{z_i - z_j}$ 是同一件事：概率只由 logit 之差决定，整体平移不改变任何差值。
+这和<Ref to="step-1">第 1 步</Ref>的 $\frac{p_i}{p_j} = e^{z_i - z_j}$ 是同一件事：**概率只由 logit 之差决定**，整体平移不改变任何差值。
 
-### 直接按定义算会怎样
+### 直接按定义算会出 nan
 
-数学上不变，计算机里却不一样。直接算 $e^{z_i}$ 有两种失败方式：
+数学上不变，计算机里却不一样，因为 $e^{z}$ 的取值范围很容易超出浮点数能表示的范围。以 float32 为例：
 
-- **上溢**：float32 能表示的最大数约为 $3.4 \times 10^{38}$，$z$ 超过 88.72 时 $e^{z}$ 就变成 inf，分子分母都是 inf，相除得到 nan。半精度更紧，float16 的上限只有 65504，$z$ 超过 11.09 就会溢出，混合精度训练时很容易碰到。
-- **下溢**：所有 logit 都低于约 $-104$ 时，每一项 $e^{z_j}$ 在 float32 里都变成 0，分母为 0，得到 0 / 0 = nan。
+- **上溢**：float32 能表示的最大数约为 $3.4 \times 10^{38}$，$z$ 超过 88.72 时 $e^{z}$ 就变成 inf。分子分母都是 inf，相除得到 nan。float16 的上限只有 65504，$z$ 超过 11.09 就会溢出，混合精度训练时很容易碰到。
+- **下溢**：所有 logit 都低于约 $-104$ 时，每一项 $e^{z_j}$ 都变成 0，分母为 0，得到 0 / 0 = nan。
 
 ### 先减去最大值
 
-利用平移不变性，先减去最大值 $m = \max_j z_j$ 再算。这时所有指数都不大于 0，最大的一项正好是 $e^{0} = 1$：分子不会上溢，分母落在 $[1, K]$ 之间，也不会变成 0。很小的项下溢成 0 没有关系，它们真实的概率本来就可以忽略。
+利用平移不变性，取 $c = -m$，$m = \max_j z_j$：
 
-<StabilityDemo />
+$$
+p_i = \frac{e^{z_i}}{\sum_j e^{z_j}} = \frac{e^{z_i - m}}{\sum_j e^{z_j - m}}
+$$
+
+等号由上面的推导直接成立，结果和原式完全相等。换成右边的算法后：
+
+- **分子不会上溢**：$z_i - m \le 0$，所以 $e^{z_i - m} \le 1$。
+- **分母不会是 0**：最大的那一项是 $e^{0} = 1$，所以分母落在 $[1, K]$ 之间。
+- **个别项下溢无妨**：$z_i - m$ 很负的项会变成 0，但它们真实的概率本来就小到可以忽略。
 
 写成代码只多一行，PyTorch 的 `torch.softmax` 内部也是这样做的：
 
@@ -316,7 +338,7 @@ $$
 L = -\sum_{i=1}^{K} y_i \log p_i = -\log p_{\text{真实类}}
 $$
 
-把 $p = \text{softmax}(z)$ 代进去对 logits 求导，结果非常简单（推导见<Ref to="ce-derivation">附录 B</Ref>）：
+交叉熵从哪里来、为什么适合当损失，见<Ref topic="cross-entropy" to="step-3">《交叉熵》第 3 步</Ref>。把 $p = \text{softmax}(z)$ 代进去对 logits 求导，结果非常简单（推导见<Ref to="ce-derivation">附录 B</Ref>）：
 
 $$
 \nabla_z L = p - y
@@ -332,17 +354,23 @@ $$
 p - y = (0.7,\ -0.8,\ 0.1)
 $$
 
-梯度下降沿负梯度走，$z \leftarrow z - \eta\,(p - y)$：$z_2$ 被增大，真实类的 logit 往上推；$z_1$、$z_3$ 被减小，而且预测得越离谱（$p_1 = 0.7$ 很大），被往下压得越狠。取 $\eta = 1$ 走一步，$z$ 从 $(\log 7, \log 2, 0) \approx (1.946, 0.693, 0)$ 变成 $(1.246, 1.493, -0.100)$，$p$ 变成 $(0.394, 0.504, 0.102)$，损失从 $-\log 0.2 = 1.609$ 降到 $0.685$。
+梯度下降沿负梯度走，$z \leftarrow z - \eta\,(p - y)$：$z_2$ 被增大，真实类的 logit 往上推；$z_1$、$z_3$ 被减小，而且预测得越离谱（$p_1 = 0.7$ 很大），被往下压得越狠。
+
+具体算一步。取 $z = (\log 7, \log 2, 0)$，它的 softmax 正好是上面的 $p = (0.7, 0.2, 0.1)$；学习率 $\eta = 1$，损失 $L = -\log p_2$。走一步前后：
+
+$$
+\begin{aligned}
+z &:\ (1.946,\ 0.693,\ 0) &&\to\ (1.246,\ 1.493,\ -0.100) \\
+p &:\ (0.7,\ 0.2,\ 0.1) &&\to\ (0.394,\ 0.504,\ 0.102) \\
+L &:\ 1.609 &&\to\ 0.685
+\end{aligned}
+$$
+
+只走一步，真实类别的概率就从 0.2 升到 0.504，成了三类里最大的；损失降到原来的一半以下。
 
 <CrossEntropyDemo />
 
 </Detail>
-
-<Pitfall>
-
-$p - y$ 是 softmax 和交叉熵**合起来**对 logits 的梯度。softmax 单独的导数是一个 $K \times K$ 的矩阵（<Ref to="step-5">第 5 步</Ref>），后面接的不是交叉熵时，梯度没有这么简单。
-
-</Pitfall>
 
 <Quiz>
 
@@ -360,21 +388,17 @@ $p - y$ 只在“预测对了而且很自信”时才接近 0。但 softmax 后�
 
 </Step>
 
-<Step id="step-5" n={5} title="饱和与注意力里的 $\sqrt{d_k}$" gist="softmax 自身的导数是 $J = \text{diag}(p) - pp^\top$；分布接近 one-hot 时 $J \approx 0$，往回传的梯度几乎消失。注意力把点积除以 $\sqrt{d_k}$，就是为了不让分数随维度变大而饱和。">
+<Step id="step-5" n={5} title="softmax 的饱和" gist="logit 之间的差值很大时，分布接近 one-hot，softmax 自身的导数 $J \approx 0$，往回传的梯度几乎消失；注意力把点积除以 $\sqrt{d_k}$，就是为了避开它。">
 
 <KeyPoint>
 
-$$
-J_{ij} = \frac{\partial p_i}{\partial z_j}, \qquad J = \text{diag}(p) - pp^\top
-$$
-
-当某个 $z_i$ 远大于其他时，$p$ 接近 one-hot，$J \approx 0$，经过 softmax 往回传的梯度几乎消失。Transformer 的注意力用
+softmax 自身的导数是
 
 $$
-\text{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)
+J = \text{diag}(p) - pp^\top
 $$
 
-若 $q, k$ 各分量独立、均值为 0、方差为 1，点积 $q^\top k$ 的方差是 $d_k$；除以 $\sqrt{d_k}$ 让方差回到 1，维度再大 softmax 也不容易饱和。
+logit 之间的差值很大时，$p$ 接近 one-hot，$J \approx 0$，经过 softmax 往回传的梯度 $J^\top g$ 几乎消失，这叫**饱和**。交叉熵里的 log 能抵消它；注意力后面不接 log，所以要把点积除以 $\sqrt{d_k}$，让差值回到 1 的量级。
 
 </KeyPoint>
 
@@ -389,11 +413,25 @@ $$
 \qquad\Longrightarrow\qquad J = \text{diag}(p) - pp^\top
 $$
 
-对角元为正：调大自己的 logit，自己的概率变大。非对角元为负：调大别人的 logit，分母变大，自己被“挤小”。
+对角元为正：调大自己的 logit，自己的概率变大。非对角元为负：调大别人的 logit，分母变大，自己被“挤小”。梯度能不能穿过 softmax，就看这个矩阵有多大。
+
+### 差值一大，分布就被锁死
+
+<Ref to="step-1">第 1 步</Ref>说过，两类的概率之比只由 logit 之差决定：$\frac{p_1}{p_2} = e^{z_1 - z_2}$。所以 softmax 看的是**绝对差**，不是相对差。比较两组 logits：$(1002, 980)$ 和 $(1.002, 0.980)$。它们的相对差都是 2.2% 左右，但绝对差一个是 22，一个是 0.022：
+
+$$
+e^{22} \approx 3.6 \times 10^{9}, \qquad e^{0.022} \approx 1.022
+$$
+
+概率之比随差值指数增长。前一组的 $p_1$ 和 1 只差 $2.8 \times 10^{-10}$，几乎是 one-hot；后一组 $p \approx (0.505, 0.495)$，几乎是均匀分布。由<Ref to="shift-inv">平移不变性</Ref>，$(1002, 980)$ 和 $(22, 0)$ 的结果完全一样，起作用的只有 22 这个差，“1002”这个大数本身无关紧要。两组数正好差 1000 倍，而把 logits 整体放大 1000 倍，等于把<Ref to="step-2">温度</Ref>降到 $T = 0.001$。**softmax 对平移不变，对缩放却非常敏感。**
+
+分布尖本身不算错，模型确实有把握时，输出本来就该接近 one-hot。麻烦出在梯度上：同样看 Jacobian 的对角元 $p_1(1 - p_1)$，前一组约为 $2.8 \times 10^{-10}$，后一组约为 $0.25$，已经是它能取到的最大值。
+
+<ScaleFigure />
 
 ### 饱和：Jacobian 趋于 0
 
-设 $p$ 正好是 one-hot，$p = e_k$（第 $k$ 个分量为 1，其余为 0）。这时 $\text{diag}(p)$ 只有第 $k$ 个对角元是 1，$pp^\top$ 也只有第 $(k, k)$ 个元素是 1，两者相减
+把这个现象推到极限。设 $p$ 正好是 one-hot，$p = e_k$（第 $k$ 个分量为 1，其余为 0）。这时 $\text{diag}(p)$ 只有第 $k$ 个对角元是 1，$pp^\top$ 也只有第 $(k, k)$ 个元素是 1，两者相减
 
 $$
 J = \text{diag}(e_k) - e_k e_k^\top = 0
@@ -401,77 +439,55 @@ $$
 
 $p$ 接近 one-hot 时也一样：对角元 $p_i(1 - p_i)$ 和非对角元 $-p_i p_j$ 里，总有一个因子接近 0。
 
-如果 softmax 后面接的是别的运算（比如注意力权重去乘 value），损失对 $p$ 的梯度记为 $g = \frac{\partial \ell}{\partial p}$，往回传到 logits 的梯度是
+$J$ 小为什么就是问题？如果 softmax 后面接的是别的运算（比如注意力权重去乘 value），损失对 $p$ 的梯度记为 $g = \frac{\partial \ell}{\partial p}$，往回传到 logits 的梯度是
 
 $$
 \frac{\partial \ell}{\partial z} = J^\top g
 $$
 
-$J \approx 0$ 时，不管 $g$ 是什么，传到 $z$ 的梯度都接近 0，softmax 前面的参数就学不动了，这叫 softmax **饱和**。
+$J \approx 0$ 时，不管 $g$ 是什么，传到 $z$ 的梯度都接近 0，softmax 前面的参数就学不动了。分布被锁在 one-hot 上，模型也就没法再学着调整它，这就是 softmax 的**饱和**。
 
-把<Ref to="z5-example">第 1 步的 logits</Ref> 整体乘上 $a$，差距越拉越大：$a = 0$ 时 $p$ 是均匀分布，$\|J\|_F = 0.4000$（$\|J\|_F$ 是所有元素平方和的平方根）；$a = 1$ 时为 $0.3880$；$a = 3$ 时 $p_{\text{猫}} = 94.21\%$，$\|J\|_F$ 降到 $0.0958$；$a = 8$ 时只剩 $0.0007$。
+下面的演示把<Ref to="z5-example">第 1 步的 logits</Ref> 整体乘上 $a$，相当于不断降温。$a = 1$ 时 $\|J\|_F = 0.3880$（$\|J\|_F$ 是所有元素平方和的平方根）；$a = 3$ 时 $p_{\text{猫}}$ 已经到 $94.21\%$，$\|J\|_F$ 降到 $0.0958$；$a = 8$ 时只剩 $0.0007$，热力图的每一格都褪成了 0。
 
 <SaturationDemo />
 
-### 交叉熵为什么不怕饱和
+### 为什么交叉熵不受影响
 
-演示里的橙线是交叉熵的梯度 $\|p - y\|$。真实类别是“猫”时，它随 $a$ 变大一起趋于 0：预测又对又自信，本来就没什么可学的。真实类别换成“狐狸”时，它反而升到 $\sqrt{2} \approx 1.414$：错得越自信，梯度越大。
+分类训练却不怕这件事。演示里的橙线是交叉熵对 logits 的梯度 $\|p - y\|$：真实类别是“猫”时，它随 $a$ 一起趋于 0，因为预测又对又自信，本来就没什么可学的；换成“狐狸”时，它反而升到 $\sqrt{2} \approx 1.414$，错得越自信，梯度越大。
 
-这是因为交叉熵对真实类概率的导数是 $-\frac{1}{p_{\text{真实类}}}$，概率越小这一项越大，正好抵消了 $J$ 的变小（<Ref to="ce-derivation">附录 B</Ref>）。所以饱和真正造成麻烦的，是 softmax 后面**不接 log** 的地方，注意力就是最典型的例子。
+原因在 log 上：交叉熵对真实类概率的导数是 $-\frac{1}{p_{\text{真实类}}}$，概率越小这一项越大，正好抵消了 $J$ 的变小（<Ref to="ce-derivation">附录 B</Ref>）。所以饱和真正造成麻烦的，是 softmax 后面**不接 log** 的地方，注意力就是最典型的例子。
 
-### 注意力里的 $\sqrt{d_k}$
+### 例子：注意力里的 $\sqrt{d_k}$
 
-注意力权重是 query 和每个 key 的点积做 softmax。设 $q, k \in \mathbb{R}^{d_k}$ 的各分量独立、均值为 0、方差为 1：
-
-<Derivation>
-
-$$
-q^\top k = \sum_{l=1}^{d_k} q_l k_l
-$$
-
-$$
-\mathbb{E}[q_l k_l] = \mathbb{E}[q_l]\,\mathbb{E}[k_l] = 0, \qquad \text{Var}(q_l k_l) = \mathbb{E}[q_l^2]\,\mathbb{E}[k_l^2] = 1
-$$
+注意力权重是 query 和每个 key 的点积做 softmax，后面接的是对 value 的加权求和，没有 log。设 $q, k \in \mathbb{R}^{d_k}$ 的各分量独立、均值为 0、方差为 1，每一项 $q_l k_l$ 的均值为 0、方差为 1，各项相互独立，方差可以相加：
 
 $$
 \text{Var}(q^\top k) = \sum_{l=1}^{d_k} \text{Var}(q_l k_l) = d_k
 $$
 
-</Derivation>
-
-最后一行用了各项相互独立、方差可以相加。点积的标准差是 $\sqrt{d_k}$：$d_k = 64$ 时约为 8，不同 key 的分数常常相差 10 以上，softmax 几乎变成 one-hot，Jacobian 接近 0，传给 $Q$、$K$ 投影矩阵的梯度也就没了。把分数除以 $\sqrt{d_k}$，方差回到 1，和维度无关：
+点积的标准差是 $\sqrt{d_k}$。$d_k = 64$ 时约为 8，不同 key 的分数常常相差 10 以上，正是上面 $(22, 0)$ 那种情况：softmax 接近 one-hot，传给 $Q$、$K$ 投影矩阵的梯度几乎为 0。把分数除以 $\sqrt{d_k}$，方差回到 1，差值回到 1 的量级，和维度无关：
 
 $$
 \text{Attention}(Q, K, V) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right) V
 $$
 
-在演示里，$d_k = 64$ 时不缩放，64 个 query 的平均最大权重是 85.6%，平均 $\|J\|_F$ 只有 0.160；除以 $\sqrt{d_k}$ 后分别是 24.4% 和 0.305。$d_k$ 增大到 1024，不缩放的平均最大权重升到 95.2%，$\|J\|_F$ 降到 0.059，缩放后几乎不变。
-
-<AttentionScaleDemo />
-
-除以 $\sqrt{d_k}$ 也可以看成把这个 softmax 的温度设为 $T = \sqrt{d_k}$（<Ref to="step-2">第 2 步</Ref>）。<Ref topic="ldm" to="step-5">LDM 第 5 步</Ref>的 cross-attention 用的也是这个式子。
-
-<Aside title="为什么不直接除以维度">
-
-除以 $\sqrt{d_k}$ 正好让标准差回到 1。如果除以 $d_k$，方差会变成 $\frac{1}{d_k}$，维度越大分数越挤在 0 附近，softmax 趋于均匀（温度过高），注意力就失去了挑选 key 的能力。
-
-</Aside>
+这相当于把这个 softmax 的温度设为 $T = \sqrt{d_k}$。<Ref topic="ldm" to="step-5">LDM 第 5 步</Ref>的 cross-attention 用的也是这个式子。
 
 </Detail>
 
 <Pitfall>
 
-除以 $\sqrt{d_k}$ 主要是为了**防饱和**（梯度消失），不是为了防溢出。溢出靠<Ref to="step-3">第 3 步</Ref>的减最大值就能解决，而减最大值不改变分布的形状，救不了饱和。
+饱和和溢出是两回事。溢出是数值问题，<Ref to="step-3">第 3 步</Ref>的减最大值就能解决；饱和是分布本身太尖，梯度真的接近 0。减最大值不改变分布的形状，救不了饱和，要靠把差值缩小（比如注意力里除以 $\sqrt{d_k}$）。
 
 </Pitfall>
 
 <Quiz>
 
-$d_k = 256$、不做缩放时，点积的标准差大约是多少？这相当于在温度为多少的 softmax 上工作（和缩放后的版本相比）？
+$p = (0.98, 0.01, 0.01)$ 时，$J$ 的对角元和非对角元大约是多少？
 
 <Answer>
 
-$\sqrt{256} = 16$。缩放后的版本相当于对同一组点积用 $T = 16$ 的 softmax；不缩放相当于把温度降到 $\frac{1}{16}$，分布尖得多，容易饱和。
+对角元 $p_i(1 - p_i)$：$0.98 \times 0.02 = 0.0196$，$0.01 \times 0.99 = 0.0099$，第三个同样是 $0.0099$。非对角元 $-p_i p_j$：$-0.98 \times 0.01 = -0.0098$，$-0.01 \times 0.01 = -0.0001$。所有元素都不超过 0.02，而均匀分布 $p = (\frac{1}{3}, \frac{1}{3}, \frac{1}{3})$ 时对角元是 $\frac{2}{9} \approx 0.22$，差了十倍以上。
 
 </Answer>
 

@@ -37,7 +37,7 @@ $$
   { id: 'step-7', label: '调参', sub: '$s$ 的取舍', kind: 'core' },
 ]} />
 
-### 记号
+<Notation>
 
 | 记号 | 含义 |
 | --- | --- |
@@ -55,6 +55,8 @@ DDPM 文献习惯把真实加噪分布写成 $q(x_t)$，score / guidance 文献�
 另一个常见混淆是 guidance 强度的约定：原始 CFG 论文（Ho & Salimans）写成 $\hat\epsilon = (1+w)\,\epsilon_y - w\,\epsilon_\varnothing$，与本页公式等价，换算关系是 $s = 1 + w$。DiT 和 Stable Diffusion 用的是 $s$ 的约定。读论文或代码前，先确认“无 guidance”对应的是 $s = 1$ 还是 $w = 0$。
 
 </Pitfall>
+
+</Notation>
 
 </section>
 

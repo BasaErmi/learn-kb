@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import { meta as softmaxMeta } from './softmax/meta'
+import { meta as crossEntropyMeta } from './cross-entropy/meta'
 import { meta as cfgMeta } from './cfg/meta'
 import { meta as ldmMeta } from './ldm/meta'
 
@@ -24,6 +25,7 @@ export interface Topic extends TopicMeta {
 // 同一子领域内按这里的顺序显示，基础的放前面
 export const topics: Topic[] = [
   { ...softmaxMeta, load: () => import('./softmax/index.mdx') },
+  { ...crossEntropyMeta, load: () => import('./cross-entropy/index.mdx') },
   { ...cfgMeta, load: () => import('./cfg/index.mdx') },
   { ...ldmMeta, load: () => import('./ldm/index.mdx') },
 ]

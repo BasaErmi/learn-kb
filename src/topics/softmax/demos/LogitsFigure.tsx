@@ -25,9 +25,10 @@ export function LogitsFigure() {
       <div className="kb-svg-scroll">
         <svg viewBox={`0 0 ${W} ${H}`} className="kb-chart" role="img" aria-label="分类网络的最后一层输出每类一个 logit">
           {/* 输入图片 */}
-          <rect x={8} y={mid - 34} width={68} height={68} rx={4} fill="var(--paper-2)" stroke="var(--rule)" />
-          <text x={42} y={mid + 4} textAnchor="middle" style={{ fill: 'var(--ink-2)', fontSize: 12 }}>猫的图片</text>
-          <text x={42} y={mid + 56} textAnchor="middle" style={{ fontSize: 11 }}>输入</text>
+          <defs><clipPath id="kb-logits-img"><rect x={8} y={mid - 34} width={68} height={68} rx={4} /></clipPath></defs>
+          <image href={`${import.meta.env.BASE_URL}images/softmax/cat.jpg`} x={8} y={mid - 34} width={68} height={68} clipPath="url(#kb-logits-img)" preserveAspectRatio="xMidYMid slice" />
+          <rect x={8} y={mid - 34} width={68} height={68} rx={4} fill="none" stroke="var(--rule)" />
+          <text x={42} y={mid + 56} textAnchor="middle" style={{ fontSize: 11 }}>输入图片</text>
           <Arrow x1={82} x2={112} y={mid} />
 
           {/* 特征向量 h */}

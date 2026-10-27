@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  F32_EXP_MAX, Z3, Z5, attentionSim, ceGrad, crossEntropy, entropy, frobenius, gdStep, jacobian, logSoftmax,
+  F32_EXP_MAX, Z3, Z5, ceGrad, crossEntropy, entropy, frobenius, gdStep, jacobian, logSoftmax,
   logSumExp, norm, numericJacobian, oneHot, sampleCounts, softmax, softmax32,
 } from './softmax'
 
@@ -124,25 +124,19 @@ describe('cross-entropy', () => {
   })
 })
 
-describe('attention scaling', () => {
-  it('raw dot products have variance ≈ d_k', () => {
-    for (const dk of [16, 256]) {
-      const r = attentionSim(dk).scoreVar / dk
-      expect(r).toBeGreaterThan(0.85)
-      expect(r).toBeLessThan(1.15)
-    }
+describe('step 5: absolute differences decide saturation', () => {
+  it('(1002, 980) is nearly one-hot, (1.002, 0.980) nearly uniform', () => {
+    const hard = softmax([1002, 980]), soft = softmax([1.002, 0.98])
+    expect(1 - hard[0]).toBeCloseTo(2.8e-10, 11)
+    softmax([22, 0]).forEach((v, i) => expect(v).toBeCloseTo(hard[i], 12))
+    expect(soft.map((v) => +v.toFixed(3))).toEqual([0.505, 0.495])
+    expect(jacobian(hard)[0][0]).toBeCloseTo(2.8e-10, 11)
+    expect(jacobian(soft)[0][0]).toBeCloseTo(0.25, 4)
   })
-  it('without scaling softmax saturates as d_k grows; with scaling it does not', () => {
-    const { raw, scaled } = attentionSim(1024)
-    expect(raw.meanMaxW).toBeGreaterThan(0.9)
-    expect(raw.meanJ).toBeLessThan(0.1)
-    expect(scaled.meanMaxW).toBeLessThan(0.4)
-    expect(scaled.meanJ).toBeGreaterThan(0.2)
-    expect(attentionSim(4).scaled.meanJ).toBeCloseTo(scaled.meanJ, 1)
-  })
-  it('is reproducible and finite', () => {
-    expect(attentionSim(64)).toEqual(attentionSim(64))
-    expect(attentionSim(1024).raw.first.every(Number.isFinite)).toBe(true)
-    expect(sum(attentionSim(64).scaled.first)).toBeCloseTo(1, 12)
+  it('reproduces the quiz Jacobian for p = (0.98, 0.01, 0.01)', () => {
+    const J = jacobian([0.98, 0.01, 0.01])
+    expect(J.map((r, i) => +r[i].toFixed(4))).toEqual([0.0196, 0.0099, 0.0099])
+    expect(+J[0][1].toFixed(4)).toBe(-0.0098)
+    expect(+J[1][2].toFixed(4)).toBe(-0.0001)
   })
 })

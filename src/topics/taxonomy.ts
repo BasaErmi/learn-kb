@@ -47,6 +47,7 @@ export const tagTones: Record<string, TagTone> = {
   条件生成: 'plum',
   图像生成: 'rose',
   'Stable Diffusion': 'moss',
+  信息论: 'clay',
 }
 
 export const toneOf = (tag: string): TagTone => tagTones[tag] ?? 'clay'

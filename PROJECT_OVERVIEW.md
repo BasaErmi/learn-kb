@@ -44,6 +44,7 @@ Vite 8、React 19、TypeScript 5.9、MDX 3、KaTeX、Shiki、react-router 7（Ha
 | `Step` | 一个学习步骤（编号、标题、一句话结论） | 显示 |
 | `KeyPoint` | 要点与核心公式 | 显示 |
 | `Detail` | 讲解正文 | 折叠为“展开讲解” |
+| `Notation` | 总览里的记号表（连同讲记号的 Pitfall），默认收起，点“记号”展开；交叉引用跳到里面时自动展开 | 同样默认收起 |
 | `Pitfall` | 易错旁注 | 显示 |
 | `Quiz` + `Answer` | 检验题 | 显示 |
 | `Derivation` | 推导逐步展开 | 只显示最后一行 |

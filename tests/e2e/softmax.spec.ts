@@ -55,7 +55,7 @@ test('softmax page renders all math and demos without errors', async ({ page }) 
   await page.goto('./#/t/softmax')
   await expect(page.locator('#step-5')).toBeAttached()
   expect(await page.locator('.katex-error').count()).toBe(0)
-  expect(await page.locator('.kb-demo').count()).toBe(7)
+  expect(await page.locator('.kb-demo').count()).toBe(5)
   expect(errors).toEqual([])
 })
 
@@ -90,21 +90,6 @@ test('temperature demo reproduces the table and sampling', async ({ page }) => {
   await expect(demo.locator('svg').first()).toContainText('100')
 })
 
-test('stability demo: naive float32 overflows past c ≈ 86.7, stable does not', async ({ page }) => {
-  await page.goto('./#/t/softmax')
-  const demo = page.getByRole('region', { name: '给所有 logit 加同一个常数 c' })
-  const rows = demo.locator('tbody tr')
-  await demo.getByRole('button', { name: 'c = 86', exact: true }).click()
-  await expect(rows.first().locator('td').nth(3)).toHaveText('0.587')
-  await demo.getByRole('button', { name: 'c = 100', exact: true }).click()
-  await expect(rows.first().locator('td').nth(2)).toHaveText('inf')
-  await expect(rows.first().locator('td').nth(3)).toHaveText('nan')
-  await expect(rows.first().locator('td').nth(5)).toHaveText('0.587')
-  await demo.getByRole('button', { name: 'c = -110', exact: true }).click()
-  await expect(rows.first().locator('td').nth(3)).toHaveText('nan')
-  await expect(rows.first().locator('td').nth(5)).toHaveText('0.587')
-})
-
 test('jacobian demo: formula matches numeric differences', async ({ page }) => {
   await page.goto('./#/t/softmax')
   const demo = page.getByRole('region', { name: 'softmax 的 Jacobian' })
@@ -136,28 +121,13 @@ test('saturation demo: J vanishes, cross-entropy gradient does not when wrong', 
   await expect(demo.locator('.kb-demo-readout')).toContainText('1.414')
 })
 
-test('attention demo: scaling by sqrt(d_k) prevents saturation', async ({ page }) => {
-  await page.goto('./#/t/softmax')
-  const demo = page.getByRole('region', { name: '注意力里的 sqrt(d_k)' })
-  const out = demo.locator('.kb-demo-readout')
-  await expect(out).toContainText('85.6%')
-  await expect(out).toContainText('0.160')
-  await demo.getByRole('button', { name: '除以根号 d_k' }).click()
-  await expect(out).toContainText('24.4%')
-  await expect(out).toContainText('0.305')
-  await demo.getByRole('button', { name: '不缩放' }).click()
-  await demo.getByRole('button', { name: 'd_k = 1024' }).click()
-  await expect(out).toContainText('95.2%')
-  await expect(out).toContainText('0.059')
-})
-
-test('softmax sliders at extremes produce no NaN outside the overflow demo', async ({ page }) => {
+test('softmax sliders at extremes produce no NaN', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./#/t/softmax')
   await expect(page.locator('#step-5')).toBeAttached()
   const sliders = page.locator('.kb-demo input[type="range"]')
   const n = await sliders.count()
-  expect(n).toBeGreaterThanOrEqual(6)
+  expect(n).toBeGreaterThanOrEqual(5)
   for (let i = 0; i < n; i++) {
     const s = sliders.nth(i)
     for (const v of [await s.getAttribute('min'), await s.getAttribute('max')]) await s.fill(v!)
@@ -166,9 +136,7 @@ test('softmax sliders at extremes produce no NaN outside the overflow demo', asy
     await expect(d).not.toContainText('NaN')
     await expect(d).not.toContainText('Infinity')
   }
-  // 拖到两端时，除了溢出演示（它就是要展示 nan），其他演示都不应出现 nan
-  const others = page.locator('.kb-demo').filter({ hasNot: page.getByRole('table') })
-  for (const d of await others.all()) await expect(d).not.toContainText(/\bnan\b/)
+  for (const d of await page.locator('.kb-demo').all()) await expect(d).not.toContainText(/\bnan\b/)
   expect(errors).toEqual([])
 })
 

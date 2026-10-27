@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { findTopic, topics, usedBy } from './registry'
-import { findArea, inArea } from './taxonomy'
+import { TAG_TONES, findArea, inArea, tagTones } from './taxonomy'
 
 describe('registry', () => {
   it('has unique slugs', () => {
@@ -19,6 +19,10 @@ describe('registry', () => {
   })
   it('puts every topic in a known sub-area', () => {
     for (const t of topics) expect(findArea(t.area), `${t.slug}: ${t.area}`).toBeDefined()
+  })
+  it('gives every tag a registered colour', () => {
+    for (const t of topics) for (const tag of t.tags) expect(tagTones[tag], `${t.slug}: ${tag}`).toBeDefined()
+    for (const tone of Object.values(tagTones)) expect(TAG_TONES).toContain(tone)
   })
   it('area filter matches a whole area or one sub-area', () => {
     expect(inArea('ml-basics/prob-output', 'ml-basics')).toBe(true)

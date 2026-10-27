@@ -26,7 +26,7 @@ Vite 8、React 19、TypeScript 5.9、MDX 3、KaTeX、Shiki、react-router 7（Ha
 
 ## 知识库的组织
 - 每个专题挂在一个子领域下（`meta.area = '领域id/子领域id'`），首页按 `taxonomy.ts` 的顺序分组。目前有：机器学习基础 › 概率输出与损失（Softmax）、生成模型 › 扩散模型（CFG、LDM）。
-- `meta.tags` 是跨领域关键词，首页顶部可按标签筛选；专题页的面包屑和标签都链回首页的筛选结果（`#/?area=…`、`#/?tag=…`）。
+- `meta.tags` 是跨领域关键词，首页顶部可按标签筛选；专题页的面包屑和标签都链回首页的筛选结果（`#/?area=…`、`#/?tag=…`）。每个标签在 `taxonomy.ts` 的 `tagTones` 里登记一种色调（八种，色值在 `base.css` 的 `[data-tone]` 里），首页筛选、卡片和专题页头都用 `src/app/Tag.tsx` 显示成同色的圆角标签；类名是 `.kb-pill`，因为 `.kb-tag` 已经是演示图片上的角标。
 - `meta.prereqs` 是建议先读的专题，专题页头同时显示“建议先读”和自动算出的“被这些专题用到”。
 - 规则和理由见 ADR-003。领域 id 发布后不要改名。
 

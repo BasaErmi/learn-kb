@@ -31,3 +31,22 @@ export function findArea(path: string): { area: Area; sub: SubArea } | undefined
 export function inArea(topicArea: string, filter: string): boolean {
   return topicArea === filter || topicArea.startsWith(`${filter}/`)
 }
+
+/**
+ * 标签的颜色。每个标签固定一种色调，首页筛选、专题卡片和专题页头都用它；色值在 base.css 的 `[data-tone]` 里。
+ * 新标签要先在这里登记（registry.test 会检查），尽量选一个还没用过的色调。
+ */
+export const TAG_TONES = ['sea', 'moss', 'clay', 'plum', 'ochre', 'teal', 'indigo', 'rose'] as const
+export type TagTone = (typeof TAG_TONES)[number]
+
+export const tagTones: Record<string, TagTone> = {
+  分类: 'sea',
+  注意力: 'indigo',
+  采样: 'ochre',
+  数值稳定: 'teal',
+  条件生成: 'plum',
+  图像生成: 'rose',
+  'Stable Diffusion': 'moss',
+}
+
+export const toneOf = (tag: string): TagTone => tagTones[tag] ?? 'clay'

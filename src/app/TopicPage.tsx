@@ -8,6 +8,7 @@ import { TopicToc } from '@/kb/components/TopicToc'
 import { mdxComponents } from '@/kb/mdx-components'
 import { BackToReading, JumpProvider } from '@/kb/jump'
 import { NotFound } from './NotFound'
+import { Tag } from './Tag'
 
 // 每个专题的懒加载组件只创建一次。路由切换在 transition 里进行，挂起的渲染会被丢弃，
 // 如果在渲染时现场创建 lazy 组件，每次重试都会得到新组件，永远加载不完
@@ -38,7 +39,7 @@ function TopicHead({ topic }: { topic: Topic }) {
       <dl className="kb-topic-rel">
         <div>
           <dt>标签</dt>
-          <dd>{topic.tags.map((tag) => <Link key={tag} className="kb-tag-link" to={`/?tag=${encodeURIComponent(tag)}`}>#{tag}</Link>)}</dd>
+          <dd className="kb-tags">{topic.tags.map((tag) => <Tag key={tag} tag={tag} to={`/?tag=${encodeURIComponent(tag)}`} />)}</dd>
         </div>
         {pre.length > 0 && <div><dt>建议先读</dt><dd>{links(pre)}</dd></div>}
         {next.length > 0 && <div><dt>被这些专题用到</dt><dd>{links(next)}</dd></div>}

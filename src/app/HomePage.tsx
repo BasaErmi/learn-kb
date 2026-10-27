@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { findTopic, topics, type Topic } from '@/topics/registry'
-import { areas, findArea, inArea } from '@/topics/taxonomy'
+import { areas, findArea, inArea, toneOf } from '@/topics/taxonomy'
 import { readJSON, safeStorage } from '@/kb/state/storage'
 import { TexText } from '@/kb/components/Tex'
+import { Tag } from './Tag'
 
 // 标签按出现次数排序，次数相同按首次出现的顺序
 const allTags = (() => {
@@ -12,13 +13,13 @@ const allTags = (() => {
   return [...count].sort((a, b) => b[1] - a[1]).map(([tag, n]) => ({ tag, n }))
 })()
 
-function TopicCard({ t }: { t: Topic }) {
+function TopicCard({ t, activeTag }: { t: Topic; activeTag: string | null }) {
   const mastered = readJSON<string[]>(safeStorage(), `kb:${t.slug}:mastered`, []).length
   const nSteps = t.steps.filter((s) => s.id.startsWith('step-')).length
   const pre = (t.prereqs ?? []).map((s) => findTopic(s)?.title ?? s)
   return (
     <Link to={`/t/${t.slug}`} className="kb-topic-card">
-      <span className="kb-eyebrow">{t.tags.map((tag) => `#${tag}`).join('  ')}</span>
+      <span className="kb-tags">{t.tags.map((tag) => <Tag key={tag} tag={tag} active={tag === activeTag} />)}</span>
       <h4>{t.title}</h4>
       <p><TexText>{t.summary}</TexText></p>
       <span className="kb-card-meta">
@@ -48,8 +49,8 @@ export function HomePage() {
       </header>
       <div className="kb-filter" role="group" aria-label="按标签筛选">
         {allTags.map(({ tag: x, n }) => (
-          <button key={x} type="button" className="kb-chip" aria-pressed={x === tag} onClick={() => toggleTag(x)}>
-            #{x}<small>{n}</small>
+          <button key={x} type="button" className="kb-tag-chip" data-tone={toneOf(x)} aria-pressed={x === tag} onClick={() => toggleTag(x)}>
+            {x}<small>{n}</small>
           </button>
         ))}
         {(tag || area) && (
@@ -71,7 +72,7 @@ export function HomePage() {
               <div key={sub.id} className="kb-subarea">
                 <h3>{sub.title}<span>{items.length}</span></h3>
                 <ul className="kb-topic-list">
-                  {items.map((t) => <li key={t.slug}><TopicCard t={t} /></li>)}
+                  {items.map((t) => <li key={t.slug}><TopicCard t={t} activeTag={tag} /></li>)}
                 </ul>
               </div>
             ))}

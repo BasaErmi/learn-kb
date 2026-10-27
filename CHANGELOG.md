@@ -1,6 +1,14 @@
 # 变更日志
 
 ## [2026-10-27] - Changed
+- 标签换成彩色圆角标签，去掉前面的“#”。
+  - 每个标签固定一种色调，在 `src/topics/taxonomy.ts` 的 `tagTones` 里登记；共八种，配色和纸张、墨色的整体风格一致，浅底上的文字和实心底上的白字对比度都不低于 5。
+  - 首页筛选按钮用彩色圆点标出颜色，选中后整个按钮填成该颜色；卡片里和当前筛选相同的标签同步高亮。
+  - 专题页头的标签也用同一套颜色。
+  - 单元测试会检查每个标签都登记了颜色。
+  - 相关文件：`src/app/Tag.tsx`、`src/app/HomePage.tsx`、`src/app/TopicPage.tsx`、`src/styles/base.css`、`src/topics/registry.test.ts`、`tests/e2e/softmax.spec.ts`。
+
+## [2026-10-27] - Changed
 - Softmax 专题精简为 5 步：从 logits 到概率 → 温度 → 平移不变与数值稳定 → 接上交叉熵：$p - y$ → 饱和与 $\sqrt{d_k}$。
   - 原来的 Jacobian 一步和交叉熵一步合并：正文只给 $\nabla_z L = p - y$ 的结论；Jacobian 的结果放到第 5 步饱和的开头，因为饱和要用到它。
   - 两处推导移到页末新增的「附录：两个梯度的推导」（A. Jacobian，B. 交叉熵梯度），复习模式下折叠。Jacobian 演示随推导一起移到附录。

@@ -44,8 +44,7 @@ export function HomePage() {
   return (
     <div className="kb-home">
       <header className="kb-home-head">
-        <h1>知识库</h1>
-        <p className="kb-lede">按领域整理的学习笔记，每篇都可以在「学习」和「复习」两种模式间切换。标签跨领域，点一下筛出相关的专题。</p>
+        <h1>Guanlin 的知识库</h1>
       </header>
       <div className="kb-filter" role="group" aria-label="按标签筛选">
         {allTags.map(({ tag: x, n }) => (

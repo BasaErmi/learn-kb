@@ -26,8 +26,8 @@ a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness:
 
 /* 首页 */
 .kb-home { max-width: 62rem; margin: 0 auto; }
-.kb-home-head { padding: 3rem 0 2rem; border-bottom: 1px solid var(--ink); margin-bottom: 2.5rem; }
-.kb-home-head h1 { font-family: var(--display); font-size: clamp(2.8rem, 6vw, 4.4rem); font-weight: 500; line-height: 1.05; margin: 0 0 0.8rem; font-variation-settings: "opsz" 144, "SOFT" 50; letter-spacing: -0.01em; }
+.kb-home-head { padding: 3rem 0 0; margin-bottom: 2rem; }
+.kb-home-head h1 { font-family: var(--display); font-size: clamp(2.8rem, 6vw, 4.4rem); font-weight: 500; line-height: 1.05; margin: 0; font-variation-settings: "opsz" 144, "SOFT" 50; letter-spacing: -0.01em; }
 .kb-topic-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: 1.5rem; }
 .kb-topic-card {
   position: relative; display: flex; flex-direction: column; height: 100%; padding: 1.5rem 1.6rem 1.3rem;
@@ -42,7 +42,7 @@ a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness:
 .kb-card-meta { font-family: var(--sans); font-size: 0.74rem; color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase; }
 .kb-lede { color: var(--ink-2); font-size: 1.08rem; max-width: 40rem; margin: 0; }
 /* 首页：标签筛选 + 领域 › 子领域分组 */
-.kb-filter { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; margin: -0.8rem 0 0.5rem; }
+.kb-filter { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; margin: 0 0 0.5rem; }
 .kb-area { padding-top: 2.2rem; }
 .kb-area > h2 { font-family: var(--display); font-size: 1.9rem; font-weight: 600; line-height: 1.2; margin: 0 0 0.2rem; font-variation-settings: "opsz" 72; }
 .kb-subarea { margin-top: 1rem; }

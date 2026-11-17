@@ -223,6 +223,8 @@ $$
 \mathcal{L}_{\text{reg}} = \beta \cdot D_{\text{KL}}\big(\mathcal{N}(\mu, \sigma^2)\,\|\,\mathcal{N}(0, I)\big), \qquad \beta \approx 10^{-6}
 $$
 
+<Anchor id="vq-reg" />
+
 VQ 版本引入码本 $\{e_k\}_{k=1}^{K}$，把每个空间位置的向量换成最近的码字 $z_q = e_{k^*}$，$k^* = \arg\min_k \|z - e_k\|_2$，配合 codebook loss 和 commitment loss 训练。LDM 把量化层算作 decoder 的一部分，扩散模型实际是在量化**之前**的连续 latent 上训练的。实践中 KL 版本用得更广，SD、SDXL 和 DiT 用的都是它（`kl-f8`）。
 
 ### 它和标准 VAE 的区别

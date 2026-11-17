@@ -17,6 +17,11 @@ export const areas: Area[] = [
     title: '生成模型',
     subs: [{ id: 'diffusion', title: '扩散模型' }],
   },
+  {
+    id: 'embodied',
+    title: '具身智能',
+    subs: [{ id: 'latent-action', title: '潜在动作' }],
+  },
 ]
 
 /** 'ml-basics/prob-output' → 领域和子领域；写错时返回 undefined */
@@ -48,6 +53,10 @@ export const tagTones: Record<string, TagTone> = {
   图像生成: 'rose',
   'Stable Diffusion': 'moss',
   信息论: 'clay',
+  模仿学习: 'moss',
+  强化学习: 'indigo',
+  向量量化: 'plum',
+  世界模型: 'teal',
 }
 
 export const toneOf = (tag: string): TagTone => tagTones[tag] ?? 'clay'

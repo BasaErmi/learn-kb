@@ -1,9 +1,10 @@
 # 当前状态
 
-最后更新：2026-10-27
+最后更新：2026-11-13
 
 ## 进行中
-- 新增《交叉熵》专题，等待 Guanlin 阅读反馈。已发布 Softmax、CFG、LDM 三个专题：https://basaermi.github.io/learn-kb/
+- 新增《LAPO》专题（第一个论文带读类专题，ADR-004），等待 Guanlin 阅读反馈。
+- 《交叉熵》专题等待 Guanlin 阅读反馈。已发布 Softmax、CFG、LDM 三个专题：https://basaermi.github.io/learn-kb/
 - 知识库已按“领域树 + 标签 + 前置关系”组织（ADR-003）
 
 ## 待解决

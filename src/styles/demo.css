@@ -140,3 +140,13 @@
 .kb-mat-cell { stroke: var(--card); stroke-width: 2; cursor: pointer; }
 .kb-mat-cell.is-hot { stroke: var(--ink); stroke-width: 2; }
 .kb-chart .kb-mat-val { font-family: var(--mono); font-size: 10.5px; fill: var(--ink); pointer-events: none; }
+
+/* LAPO 专题：架构图里的文字、论文原图、UMAP 对照 */
+.kb-dg-text { font-family: var(--sans); white-space: nowrap; }
+.kb-paperfig-ctl { margin-bottom: 0.7rem; }
+.kb-paperfig .kb-segctl, .kb-umap-ctl { font-family: var(--sans); }
+.kb-umap-ctl { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 0.8rem; }
+.kb-umap-group { display: flex; align-items: center; gap: 0.4rem 0.6rem; flex-wrap: wrap; }
+.kb-umap-group > span { font-family: var(--sans); font-size: 0.74rem; color: var(--ink-3); width: 5.4rem; flex: none; }
+.kb-umap .kb-strip img { padding: 0; border: 0; background: #000; }
+.kb-figure img.kb-umap-legend { display: block; max-width: 26rem; margin: 0.6rem auto 0; padding: 0; border: 0; }

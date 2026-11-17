@@ -22,6 +22,15 @@
   --c-prob: var(--c-cond);
   --c-exp: var(--c-uncond);
   --c-grad: var(--c-guided);
+  /* LAPO 专题的角色：观测灰、IDM 蓝、FDM 绿、潜在动作 z 橙、真实动作 a 紫、策略 π 褐 */
+  --c-obs: #8a8377;
+  --c-idm: var(--c-cond);
+  --c-fdm: var(--c-uncond);
+  --c-latent: var(--c-guided);
+  --c-act: #7b3a64;
+  --c-pi: #835500;
+  --c-rand: #b07a10;
+  --c-new: #1d665e;
 
   --display: "Fraunces Variable", "Source Han Serif SC", "Songti SC", Georgia, serif;
   --serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;

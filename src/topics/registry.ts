@@ -3,6 +3,7 @@ import { meta as softmaxMeta } from './softmax/meta'
 import { meta as crossEntropyMeta } from './cross-entropy/meta'
 import { meta as cfgMeta } from './cfg/meta'
 import { meta as ldmMeta } from './ldm/meta'
+import { meta as lapoMeta } from './lapo/meta'
 
 export interface TopicStep { id: string; title: string }
 export interface TopicMeta {
@@ -28,6 +29,7 @@ export const topics: Topic[] = [
   { ...crossEntropyMeta, load: () => import('./cross-entropy/index.mdx') },
   { ...cfgMeta, load: () => import('./cfg/index.mdx') },
   { ...ldmMeta, load: () => import('./ldm/index.mdx') },
+  { ...lapoMeta, load: () => import('./lapo/index.mdx') },
 ]
 
 export function findTopic(slug: string): Topic | undefined {

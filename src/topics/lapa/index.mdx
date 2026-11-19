@@ -1,0 +1,473 @@
+import { PipelineFigure } from './demos/PipelineFigure'
+import { LAQFigure } from './demos/LAQFigure'
+import { CapacityFigure, DiffFigure, HeadSwapFigure, GranularityFigure } from './demos/SpaceFigures'
+
+<section id="overview" className="kb-section">
+
+## 总览与记号
+
+<KeyPoint>
+
+$$
+z_t = \mathrm{Enc}(x_t,\ x_{t+H}), \qquad \hat x_{t+H} = \mathrm{Dec}(x_t,\ z_t)
+$$
+
+$$
+\text{潜在预训练：}\ \pi_\theta(z_t \mid x_t,\ \ell) \qquad \longrightarrow \qquad \text{动作微调：}\ \pi_\theta(a_t \mid x_t,\ \ell)
+$$
+
+LAPA 用 VQ-VAE 从相邻帧学出离散的潜在动作，给无标签视频打上伪动作标签，让 VLM 先在潜在空间里做行为克隆，最后只换一层动作头，用少量真实动作微调（Ye, Jang et al.，ICLR 2025）。
+
+</KeyPoint>
+
+VLA 的瓶颈在于动作标签：遥操作采集又贵又慢，网上的视频却多得用不完。LAPA 的做法和 <Ref topic="lapo" to="overview">LAPO</Ref> 一脉相承：先用“重建未来帧”学一个离散的潜在动作空间，再让一个 7B 的 VLM 去预测这些潜在动作，把视频里的“画面变化”当成预训练的监督信号。到真正上机器人时，只需少量带标签的轨迹（真实机器人实验里是 450 条），把“想要的变化”翻译成这台机器人的动作。
+
+三句话概括这篇论文：
+
+1. **方法**：LAQ 学离散潜在动作，VLM 在潜在空间做行为克隆，再用少量真实动作微调。
+2. **最重要的发现**：预训练数据和目标机器人不是同一种 embodiment 时，不用标签的潜在预训练可以优于用真实标签的预训练；只用人类视频预训练也有正迁移。
+3. **最主要的局限**：$z$ 只由像素重建来监督，学到的是“两帧之间的变化”而不是“动作”。在固定机位的机器人数据上两者差不多，在真实世界的视频里这个近似会失效。
+
+<PaperFigure src="images/lapa/fig1.webp" alt="论文图 1：大规模机器人数据集贵、需要硬件、但有动作标签；网络视频量大，但有人与机器人的差异、没有动作标签，LAPA 要从后者训练机器人基础模型" caption="论文图 1：机器人数据集采集贵、需要硬件，但带着动作标签；网络视频随手可得，却有人和机器人的身体差异，也没有动作标签。LAPA 想从后者训练机器人基础模型。" />
+
+| 关键数字 | 数值 |
+| --- | --- |
+| 潜在动作空间 | 序列长度 4，码本 8：$8^4 = 4096$ 种，约 12 bit |
+| VLM 主干 | LWM-Chat-1M，7B |
+| LAQ 模型 | 约 300M 参数 |
+| 真实机器人平均成功率 | LAPA（Open-X）50.1，OpenVLA（Open-X）43.9 |
+| 最干净的对照 | LAPA（Bridge）36.8，ActionVLA（Bridge）32.6 |
+| 预训练算力 | 272 H100 小时，OpenVLA 为 21,500 A100 小时 |
+
+<Roadmap legend={{ goal: '问题', basis: '方法', core: '实验' }} nodes={[
+  { id: 'step-1', label: '问题与思路', sub: '用潜在动作代替标签', kind: 'goal' },
+  { id: 'step-2', label: 'LAQ', sub: '学离散潜在动作', kind: 'basis' },
+  { id: 'step-3', label: '预训练与微调', sub: '潜在 BC，再换动作头', kind: 'basis' },
+  { id: 'step-4', label: '主结果', sub: '跨 embodiment 胜过真实标签', kind: 'core' },
+  { id: 'step-5', label: '消融与分析', sub: '潜在动作学到了什么', kind: 'core' },
+]} />
+
+<Notation>
+
+| 记号 | 含义 |
+| --- | --- |
+| $x_t$，$x_{t+H}$ | 当前帧和 $H$ 帧之后的未来帧；讲 LAQ 结构时简写为 $x_1$、$x_2$ |
+| $H$ | 时间窗口，机器人视频约 0.6 s（Bridgev2 为 5 Hz，$H = 3$），人类视频约 2.4 s |
+| $z_t$ | 潜在动作：$s = 4$ 个离散 token，每个取自大小为 $\lvert\mathcal{C}\rvert = 8$ 的码本，$z_t \in \{0, \dots, 7\}^4$ |
+| $\ell$ | 语言指令 |
+| $a_t$ | 真实动作：7 维末端增量动作，每维分成 256 档 |
+| $p_1, p_2$ | 两帧的 patch embedding |
+| $e_1, e_2$ | 因果 transformer 的输出：$e_1$ 只看 $x_1$，$e_2$ 看 $x_1$ 和 $x_2$ |
+| $d_1$ | $e_2 - e_1$，量化之前的连续表示 |
+| LAQ | Latent Action Quantization，学潜在动作的 VQ-VAE；编码器相当于逆动力学模型，解码器相当于世界模型 |
+| VLA | Vision-Language-Action 模型，输入画面和指令、输出动作 |
+
+</Notation>
+
+</section>
+
+<Step id="step-1" n={1} title="问题与核心思路" gist="VLA 依赖遥操作采集的动作标签，规模上不去；LAPA 让预训练阶段完全不用真实动作，改用从视频里学出的潜在动作当监督。">
+
+<KeyPoint>
+
+三个阶段：
+
+1. **LAQ**：用 VQ-VAE 从 $(x_t, x_{t+H})$ 学离散潜在动作 $z_t$，唯一的训练信号是重建 $x_{t+H}$。
+2. **潜在预训练**：用 LAQ 编码器给所有帧打伪标签，VLM 学 $\pi_\theta(z_t \mid x_t, \ell)$。
+3. **动作微调**：丢掉潜在动作头，换新的动作头，用少量带标签轨迹学 $\pi_\theta(a_t \mid x_t, \ell)$。
+
+只有第 3 步用到真实动作。
+
+</KeyPoint>
+
+<Detail>
+
+### 出发点：动作标签太贵
+
+RT-2、OpenVLA 这类 VLA 靠遥操作采集的“画面 + 指令 + 动作”训练，数据规模受限于人力和硬件。互联网视频的量大得多，但拿来训练机器人有两个障碍：
+
+- 视频没有动作标签。
+- 视频里的身体（人手、别的机器人）和环境，与要部署的机器人不同。
+
+LAPA 的目标是让预训练阶段**完全不用真实动作标签**，从而能吃下任何带文字描述的视频。
+
+<PaperFigure src="images/lapa/fig2.webp" alt="论文图 2：LAPA 概览，左边 LAQ 用编码器、码本和解码器学潜在动作，中间 VLM 预测潜在动作，右边微调后输出真实动作" caption="论文图 2：(1) LAQ 从两帧学出离散潜在动作；(2) VLM 根据当前画面和指令预测潜在动作，相当于在潜在空间做行为克隆；最后在少量带标签轨迹上微调，映射到末端增量动作空间。" />
+
+<PipelineFigure />
+
+### 用潜在动作代替真实动作
+
+LAQ 有点像给“动作”做 BPE 分词：不需要事先规定动作空间是末端位姿、关节角还是力矩，而是从数据里学出一套离散的“动作词表”。论文的原话是，它只被优化去最好地刻画视频里相邻观测之间的“差”（delta）。
+
+这套词表和具体的身体无关，所以人的视频、不同机器人的视频都能用同一套 token 标注，这正是跨 embodiment 迁移的基础。
+
+### 论文的主张
+
+- 在不用标签的预训练方法里（UniPi、VPT），LAPA 明显更好。
+- 用 Open-X 预训练后，真实机器人上的平均成功率超过 OpenVLA（+6.22 个点）。
+- 预训练算力约为 OpenVLA 的 1/30。
+- 只用人类视频（Something-Something v2）预训练也有正迁移。
+- LAPA 当策略、LAQ 解码器当世界模型，两者交替就能做纯神经网络的闭环推演（论文图 7，见<Ref to="step-5">第 5 步</Ref>）。
+
+### 与相关工作的区别
+
+| 方法 | 怎样从无标签视频拿“动作” | 和 LAPA 的区别 |
+| --- | --- | --- |
+| VPT | 先用有标签数据训练 IDM，再给视频打伪标签 | IDM 需要真实动作；伪标签绑定在源 embodiment 的动作空间里 |
+| UniPi | 视频扩散模型生成未来帧，再用 IDM 反推动作 | 在像素空间做规划，长程任务容易出错 |
+| Genie | 潜在动作模型 | 目的是生成可交互的环境，不是训练策略 |
+| LAPO | 从观测学潜在动作，再训练策略 | 只在 Procgen 游戏上验证 |
+| Lynch et al. 等 | 把真实动作编码成潜在变量 | 潜在变量来自真实动作，LAPA 的来自观测 |
+
+LAPA 的 LAQ 直接沿用 Genie 的潜在动作模型并做了几处修改，训练策略的思路则和 <Ref topic="lapo" to="step-5">LAPO 的三阶段流水线</Ref>相同；最大的不同是场景从游戏换成了真实的机器人操作和人类视频，策略从小网络换成了 7B 的 VLM。
+
+</Detail>
+
+<Pitfall title="z 编码的是变化，不是动作">
+
+$z$ 编码的是“在 12 bit 预算内，对重建 $x_{t+H}$ 最有用的变化”。解码器已经有 $x_t$，静态内容不用传。固定机位的机器人视频里，最大的变化来自机械臂，所以潜在动作约等于动作；第一人称的人类视频里，相机自身的运动也会被编码进去（论文图 14，见<Ref to="step-5">第 5 步</Ref>）。
+
+</Pitfall>
+
+下一步看 LAQ 具体怎么从两帧里学出这 12 bit。
+
+</Step>
+
+<Step id="step-2" n={2} title="LAQ：学离散潜在动作" gist="编码器把两帧的表征相减，量化成 4 个取自 8 个码字的 token；解码器从当前帧加这 4 个 token 重建未来帧，唯一的训练信号是像素 L2。">
+
+<KeyPoint>
+
+$$
+z_1 = \arg\min_{z_k \in \mathcal{C}} \|d_1 - z_k\|^2, \qquad d_1 = e_2 - e_1
+$$
+
+$$
+\hat x_2 = D\big(\mathrm{Attn}(\mathrm{sg}[p_1],\ \hat d_1,\ \hat d_1)\big), \qquad \mathcal{L} = \|x_2 - \hat x_2\|_2^2
+$$
+
+LAQ 是 C-ViViT 的变体，约 300M 参数。潜在动作只有 $8^4 = 4096$ 种、约 12 bit，这个瓶颈阻止了 $z$ 把整张 $x_2$ 搬过去。
+
+</KeyPoint>
+
+<Detail>
+
+### 数据流
+
+下面用 $x_1$、$x_2$ 表示 $x_t$、$x_{t+H}$。
+
+1. $x_1$、$x_2$ 分别做 patch embedding 得到 $p_1$、$p_2$，各自过空间 transformer。
+2. 两者一起进因果 transformer，得到 $e_1$（只看 $x_1$）和 $e_2$（看 $x_1$ 和 $x_2$）。
+3. 取差 $d_1 = e_2 - e_1$，过一个 CNN，CNN 的卷积核、步长和填充决定了序列长度 $s = 4$。
+4. 每个位置在码本（$\lvert\mathcal{C}\rvert = 8$）里就近量化，训练时用 NSVQ。
+5. 解码器做 cross-attention：$x_1$ 的 patch 作 query，潜在动作作 key 和 value；解码器只有空间 transformer，重建 $x_2$。
+
+<LAQFigure />
+
+<PaperFigure src="images/lapa/fig8.webp" maxWidth="26rem" alt="论文图 8：LAQ 模型结构，编码器由 patch embedding、空间 transformer、因果 transformer 和离散化组成，解码器由 NSVQ、空间 transformer 和 patch embedding 组成" caption="论文图 8：LAQ 的结构。编码器包含空间和时间（因果）transformer，解码器只有空间 transformer，因为输入只有两帧。" />
+
+### 量化与解码
+
+编码器的输出 $d_1$ 在码本里找最近的码字（论文式 1）：
+
+$$
+z_1 = \arg\min_{z_k \in \mathcal{C}} \|d_1 - z_k\|^2
+$$
+
+训练时送进解码器的并不是 $z_1$ 本身。为了避免 VQ-VAE 常见的梯度坍塌，LAPA 用 NSVQ：保留量化误差的长度，但把方向换成随机噪声（论文式 2）：
+
+$$
+\hat d_1 = d_1 + \|d_1 - z_1\| \cdot \frac{v}{\|v\|}, \qquad v \sim \mathcal{N}(0, I)
+$$
+
+解码器以停梯度的 $p_1$ 为 query，对 $\hat d_1$ 做 cross-attention，再重建 $x_2$（式 3、式 4）：
+
+$$
+\hat x_2 = D\big(\mathrm{Attn}(\mathrm{sg}[p_1],\ \hat d_1,\ \hat d_1)\big), \qquad \mathcal{L} = \|x_2 - \hat x_2\|_2^2
+$$
+
+推理时直接用 $z_1$。
+
+<Aside title="NSVQ 为什么可导">
+
+整条路上没有 argmin 挡着：$\hat d_1$ 对 $d_1$ 和码字 $z_1$ 都可导，同一个重建损失既训练编码器，又把码字拉向数据、把数据拉向码字，不需要 straight-through，也不需要单独的 codebook loss 和 commitment loss。训练早期还会把长期没被选中的码字重新初始化，码本只有 8 个时这一点尤其重要。梯度的具体推导和与 EMA 码本的对比，留给以后单独的 NSVQ 条目。
+
+</Aside>
+
+### 为什么要离散化
+
+- **VLM 能像预测词一样预测潜在动作**：每个位置是一个 8 分类。
+- **动作空间小**：$8^4$ 对比 OpenVLA 的 $256^7$，潜在预训练 1 个 epoch 就收敛。
+- **信息瓶颈**：约 12 bit 装不下整张 $x_2$，编码器只能传最有用的变化。
+
+<CapacityFigure />
+
+### 做差 $d_1 = e_2 - e_1$ 带来的偏置
+
+做差这一步本身是可逆的，并不能防止信息泄漏，防泄漏靠的是量化瓶颈。它的作用是给潜在空间加了一个几何上的偏好：
+
+- **好处**：“没变化”自然对应 $d \approx 0$（论文图 12 里“Do not move”的那个码字）；如果表征对动作近似平移，同一个动作在不同场景里会落到同一个码字上。
+- **代价**：隐含了“动作是加性位移”的假设，夹爪开合这种局部、小面积的变化可能表达不好。
+- **无关变化被编码的根源**在像素重建这个目标，不在做差。
+
+<DiffFigure />
+
+### 其他设计
+
+- **cross-attention 代替 Genie 的加法注入**：每个 patch 自己决定这个动作对它意味着什么，作者说学到的潜在动作语义更清楚。
+- **对 $p_1$ 停梯度**：作者只说是为了避免表征坍塌。一种解释是，这样重建梯度不会经解码器去塑造共享的 patch embedding，变化的信息只能经 $z$ 传过去。
+- **像素 L2 偏向大面积变化**：相机平移这种整幅画面都在变的情况贡献大，夹爪开合贡献小，这可能和 LAPA 抓取偏弱有关。
+
+这几处设计论文都没有做消融。
+
+### 时间窗口与训练后的用途
+
+时间窗口 $H$ 在机器人视频上约 0.6 s（Bridgev2 为 5 Hz，$H = 3$），在人类视频上约 2.4 s。训练完之后：
+
+- 编码器当逆动力学模型，给视频打伪标签；
+- 解码器当世界模型，只用于可视化和论文图 7 的闭环推演，不参与策略训练。
+
+</Detail>
+
+有了编码器打出的伪标签，下一步就是让 VLM 去学它们。
+
+</Step>
+
+<Step id="step-3" n={3} title="潜在预训练与动作微调" gist="预训练是在潜在空间里做行为克隆：VLM 只看单帧和指令，预测 4 个潜在 token；微调时只换掉一层头，改为预测 7 维真实动作。">
+
+<KeyPoint>
+
+$$
+\mathcal{L}_{\text{pre}} = -\sum_{i=1}^{s} \log p_\theta\big(z_t^{(i)} \mid x_t,\ \ell,\ z_t^{(<i)}\big)
+$$
+
+视觉编码器冻结，LLM 全量训练，1 个 epoch 即达最佳。微调时丢掉潜在动作头（单层 MLP），换随机初始化的动作头，预测 $\pi_\theta(a_t \mid x_t, \ell)$。被丢掉的只有一层，预训练学到的东西留在 LLM 里。
+
+</KeyPoint>
+
+<Detail>
+
+### 打标签
+
+LAQ 编码器给每一帧打上 $z_t \in \{0, \dots, 7\}^4$。LAQ 和潜在预训练用的是**同一份数据集**，避免了 VPT 那种“IDM 的训练分布和要标注的视频分布不一致”的问题。
+
+### 潜在预训练
+
+- **输入**：语言指令 $\ell$ 和单帧 $x_t$，不看历史帧。
+- **输出**：一个新加的潜在动作头（单层 MLP，词表大小 8），预测 4 个 token。不用 VLM 原有的语言模型头。
+- **训练**：冻结视觉编码器，训练整个 LLM；1 个 epoch 就达到最佳。
+
+目标按 VLA 的惯例写成自回归形式（论文没有说明 4 个 token 是否自回归生成）：
+
+$$
+\mathcal{L}_{\text{pre}} = -\sum_{i=1}^{s} \log p_\theta\big(z_t^{(i)} \mid x_t,\ \ell,\ z_t^{(<i)}\big)
+$$
+
+在人类视频上，VLM 模仿的是“用画面变化定义的意图”。这是它能跨 embodiment 迁移的原因，也是它的上限：它分不清“手动了”和“相机动了”。
+
+### 动作微调
+
+- 丢掉潜在动作头，换随机初始化的动作头；7 维动作每维按等频分箱（沿用 RT-2、OpenVLA 的做法）。
+- 视觉编码器继续冻结，LLM 全量微调。
+- Language Table 上先生成语言方向（如“move up”，RT-H 的做法）再输出动作；7 自由度机器人上收益不大，没有用。
+
+<HeadSwapFigure />
+
+论文脚注 2 提到，他们试过保留潜在动作头、再接一个解码头，也就是 <Ref topic="lapo" to="step-5">LAPO 的做法</Ref>，效果反而更差。作者猜测原因是策略模型有 7B，直接重新初始化动作头更合适。
+
+### 知识存在哪里
+
+被丢掉的只是一层 MLP。LLM 的参数里存着“给定画面和指令，接下来画面应该怎样变化”：语言对齐、粗粒度的规划、视觉上的意图。微调只需要把“想要的变化”翻译成这台机器人的动作。
+
+证据是真实机器人上 reaching 明显更强（83.3% 对 66.7%），而抓取偏弱：知道该去哪，不一定知道怎么抓。
+
+<Aside title="主干 LWM 和 OpenVLA 的 Prismatic">
+
+LAPA 和 ActionVLA 的主干是 LWM（Large World Model，UC Berkeley）：语言模型是 LLaMA-2 7B，图像用 VQGAN 离散成 token，预训练目标里包含视频的下一帧生成，上下文用 RingAttention 扩到 1M token。OpenVLA 的 Prismatic 同样基于 LLaMA-2 7B，但视觉用 DINOv2 + SigLIP 的连续特征，只做图文理解，不生成图像。两者差别很大：同样的 Bridge 数据和真实动作目标，LWM 主干 3 个 epoch 就达到最佳，OpenVLA 要 30 个。VQGAN 的离散化有损，也可能丢掉精细的几何细节。
+
+</Aside>
+
+### 设计上值得注意的问题
+
+1. **时间粒度不匹配**：潜在动作描述约 0.6 s 的变化，微调却预测单步动作。
+2. **只看单帧**：分不清“刚抓起”和“正要放下”。
+3. **离散分类天然能处理多模态**：往左绕还是往右绕，都能各分到一部分概率。
+4. **和 VPT 的本质区别**：VPT 的伪标签在源机器人的动作空间里，IDM 需要带标签训练；LAPA 的伪标签在自己学出的潜在空间里，IDM 无监督，而且和要标注的数据同分布。
+
+<GranularityFigure />
+
+</Detail>
+
+方法讲完了，下一步看它在仿真和真实机器人上的表现，以及这些对比到底有多干净。
+
+</Step>
+
+<Step id="step-4" n={4} title="实验设置与主结果" gist="最干净的证据是同主干、同数据下 LAPA（Bridge）36.8 对 ActionVLA（Bridge）32.6：跨 embodiment 时不用标签的预训练反而更好；Open-X 上胜过 OpenVLA 的结论混杂了主干和微调方式。">
+
+<KeyPoint>
+
+| 真实机器人（Franka） | 平均成功率 |
+| --- | --- |
+| LAPA（Open-X） | 50.1 |
+| OpenVLA（Open-X） | 43.9 |
+| LAPA（Bridge） | 36.8 |
+| LAPA（人类视频） | 34.0 |
+| ActionVLA（Bridge） | 32.6 |
+
+真实动作标签只在动作空间与目标一致时才是“上界”；不一致时，与 embodiment 无关的潜在动作迁移得更好。
+
+</KeyPoint>
+
+<Detail>
+
+### 三个问题与评测环境
+
+- **Q1**：预训练和微调之间有跨任务、跨环境、跨 embodiment 的差距时，效果如何？
+- **Q2**：在多 embodiment 的设定下，能否学到比真实动作标签更好的先验？
+- **Q3**：只用人类操作视频行不行？
+
+| 环境 | 机器人 | 预训练数据 | 微调数据 | 评测规模 |
+| --- | --- | --- | --- | --- |
+| Language Table | 2 自由度推方块 | 仿真 181k / 真实 442k | 1k（cross-task 7k） | 每个子任务 50 次 × 5 |
+| SIMPLER | WidowX 7 自由度 | Bridgev2 60k / SthV2 200k | 100 条 | 每个任务 24 次 × 4 |
+| 真实机器人 | Franka 7 自由度 | Bridgev2 / Open-X 970k / SthV2 | 3 个任务 × 150 条 | 每个模型 54 次 |
+
+- SIMPLER 没有现成的微调数据：用在 Bridge 上训练的 VLA 在 SIMPLER 里推演，筛出 100 条成功轨迹。
+- 真实机器人用部分得分（partial credit），比如 pick & place：碰到物体 0.25、抓起 0.5、移向水槽 0.75、放进去 1。
+
+<PaperFigure src="images/lapa/fig9.webp" alt="论文图 9：三个评测环境，Language Table、SIMPLER 和真实 Franka 机器人" caption="论文图 9：(a) Language Table，(b) SIMPLER 里的 4 个 Bridge 任务，(c) 真实机器人的三个任务环境。" />
+
+### 模型命名：括号里是预训练数据集
+
+| 模型 | 主干 | 预训练用动作标签吗 | 来源与微调 |
+| --- | --- | --- | --- |
+| LAPA（X） | LWM | 否；LAQ 和潜在预训练都用数据集 X | 全量微调 |
+| ActionVLA（Bridge） | LWM | 是 | 全量微调；只有 Bridge 版，没有 Open-X 版 |
+| OpenVLA（Open-X） | Prismatic | 是 | 官方 checkpoint，LoRA 微调 |
+| OpenVLA（Bridge） | Prismatic | 是 | 作者重训 30 个 epoch，LoRA 微调 |
+
+- 三个 LAPA 的流程相同：$8^4$ 的潜在空间、同一个主干，真实机器人上都用同样 450 条 Franka 轨迹微调。不同的是 $H$（机器人约 0.6 s，人类视频约 2.4 s）、数据规模和任务分布。
+- LAPA（Open-X）和 OpenVLA（Open-X）看的是同样的 970k 条视频、同样 450 条微调数据，区别在于 LAPA 预训练不用标签。
+
+### Language Table
+
+| | In-domain | Cross-task | Cross-env |
+| --- | --- | --- | --- |
+| Scratch | 15.6 | 27.2 | 15.6 |
+| UniPi | 22.0 | 20.8 | 13.6 |
+| VPT | 44.0 | 72.0 | 18.0 |
+| LAPA | 62.0 | 73.2 | 33.6 |
+| ActionVLA | 77.0 | 77.0 | 64.8 |
+
+（论文表 1，seen 部分。）
+
+- **cross-env 下 VPT 几乎没有收益**：它的 IDM 对环境变化不鲁棒。
+- **cross-env 下 ActionVLA 远超 LAPA**：预训练和微调是同一种 2 自由度机器人，真实标签的语义完全一致；LAPA 的潜在动作还要承受从真实到仿真的视觉偏移。
+- **cross-task 的 unseen 部分 VPT（60.8）超过 LAPA（54.8）和 ActionVLA（58.8）**：作者归因于 IDM 用了 7k 条标签。
+
+### SIMPLER
+
+用 Bridge 预训练（论文表 11）：UniPi 1.3 < Scratch 34.4 ≈ OpenVLA 36.4 < VPT 51.0 < LAPA 57.3 < ActionVLA 63.5。这里预训练和微调都是 WidowX，真实标签仍然占优。
+
+### 真实机器人
+
+<PaperFigure src="images/lapa/fig3.webp" alt="论文图 3：真实桌面操作结果，按平均和三个任务分组的柱状图" caption="论文图 3：真实桌面操作的成功率（每个模型 54 次推演），左边灰底是三个任务的平均。" />
+
+| 模型 | 平均 | Knock | Cover | Pick & Place |
+| --- | --- | --- | --- | --- |
+| LAPA（Open-X） | 50.1 | 52.8 | 51.7 | 45.8 |
+| OpenVLA（Open-X） | 43.9 | 38.9 | 38.6 | 54.2 |
+| LAPA（Bridge） | 36.8 | 25.0 | 42.4 | 43.1 |
+| LAPA（人类视频） | 34.0 | 30.6 | 47.9 | 23.6 |
+| ActionVLA（Bridge） | 32.6 | 33.3 | 42.3 | 22.2 |
+| OpenVLA（Bridge） | 30.8 | 25.0 | 47.8 | 19.4 |
+| Scratch | 21.2 | 13.9 | 38.7 | 11.1 |
+
+- **Q2**：用 Bridge 预训练时，LAPA 超过了用真实标签的 ActionVLA 和 OpenVLA。作者认为后两者过拟合了 WidowX 的动作空间，换到 Franka 上反而是负担。
+- **Pick & place 输给 OpenVLA**：LAPA 的 reaching 更好（83.3% 对 66.7%），但抓得过早。
+- **Q3**：只用人类视频预训练的 LAPA（34.0）超过了 OpenVLA（Bridge，30.8）。
+- **任务之间的差异和预训练数据的任务分布有关**（论文表 4）：Bridgev2 里只有 2 条 knocking 轨迹，SthV2 里有 6,655 条。
+
+<PaperFigure src="images/lapa/fig4.webp" alt="论文图 4：人类视频预训练的结果，左为 SIMPLER，右为真实机器人" caption="论文图 4：用人类视频（SthV2）预训练。左：SIMPLER 上 LAPA 52.1，高于 VPT 45.8 和 Scratch 34.4，UniPi 几乎为 0；右：真实机器人上 LAPA（人类视频）的平均成功率 34.0，高于 OpenVLA（Bridge）的 30.8。" />
+
+把这些结果放在一起看：真实动作标签只在动作空间与目标一致时才是“上界”（Language Table、SIMPLER）；不一致时，与 embodiment 无关的潜在动作迁移得更好（真实 Franka）。
+
+### 预训练效率
+
+LAPA（Open-X）的预训练用 8 张 H100 跑 34 小时，共 272 H100 小时；OpenVLA 用了 21,500 A100 小时。作者给了两个原因：
+
+- **主干**：LWM 的预训练本身包含视频下一帧生成，可能已经隐含了对动作的理解。
+- **动作空间小**：$8^4$ 对比 $256^7$，所有 LAPA 模型 1 个 epoch 就达到最佳。
+
+</Detail>
+
+最后看消融和潜在动作本身学到了什么。
+
+</Step>
+
+<Step id="step-5" n={5} title="消融与潜在动作分析" gist="预训练数据量对效果影响最大，序列长度和码本大小有明显的下限；把码字逐个解码出来看：简单环境里码字和方向一一对应，人类视频里很多码字对应相机运动。">
+
+<KeyPoint>
+
+scaling 实验里，预训练数据量的影响最大（Bridgev2 的 10% 到 100%：约 29 到 56）；潜在序列长度到 4 饱和，码本只有 2 个码字时明显不够。把码字逐个喂给 LAQ 解码器看画面：Language Table 里每个码字对应一个方向；人类视频里很多码字对应相机的上下左右移动。
+
+</KeyPoint>
+
+<Detail>
+
+### Scaling
+
+下面的数值都是从论文的图上读出来的近似值。
+
+<PaperFigure src="images/lapa/fig5.webp" alt="论文图 5：LAPA 的四个 scaling 维度，LAQ 模型大小、数据比例、潜在动作序列长度、码本大小" caption="论文图 5：Bridge 预训练、SIMPLER 评测。(a) LAQ 模型参数量（M）；(b) 预训练数据占 Bridgev2 的比例（%）；(c) 潜在动作序列长度；(d) 码本大小。" />
+
+| 维度 | 取值 | 成功率（约） | 趋势 |
+| --- | --- | --- | --- |
+| LAQ 模型大小 | 30M → 75M → 150M → 300M | 54 → 55 → 56 → 57 | 随模型变大缓慢上升 |
+| 预训练数据比例 | 10% → 30% → 50% → 100% | 29 → 42 → 43 → 56 | 增益最大 |
+| 潜在序列长度 | 1 → 2 → 4 → 9 | 46 → 47 → 57 → 57 | 到 4 饱和 |
+| 码本大小 | 2 → 4 → 8 | 40 → 54 → 57 | 2 明显不够 |
+
+### Language Table 的潜在空间
+
+<PaperFigure src="images/lapa/fig16.webp" maxWidth="30rem" alt="论文图 16：Language Table 上潜在序列长度和码本大小的消融" caption="论文图 16：Language Table 上，(a) 序列长度 1、2、4；(b) 码本大小 8、256、1024。" />
+
+序列长度从 1 到 4，成功率约 54 到 60；码本从 8 到 256 再到 1024，约 54、61、64.5。在这种简单环境里，加大码本比加长序列更有效。
+
+### 其他消融
+
+<PaperFigure src="images/lapa/fig15.webp" maxWidth="32rem" alt="论文图 15：时间窗口大小和微调数据量的消融" caption="论文图 15：(a) 时间窗口 $H$；(b) 微调数据量，LAPA 对比 Scratch。" />
+
+- **时间窗口 $H$**：1、3、5 时约 56、57、57；$H = 10$ 降到约 50。
+- **微调数据量**：从 10 条到 100 条，LAPA 始终高于 Scratch。
+- **人类视频的数据量**（论文表 12）：SthV2 用 10% 时 50.0，全部用时 52.1。
+
+### 潜在动作学到了什么
+
+分析方法是：固定 $x_1$，把每个码字依次喂给 LAQ 解码器，看重建出的画面怎么动。
+
+**1. Language Table（论文图 12、图 13）。** 码本 8、序列长度 1 时，每个码字对应一个方向，比如 0 是左前、6 是不动。把真实的 2D 动作画成点、按潜在动作上色，能看到明显的分区。
+
+<PaperFigTabs label="论文图 12 和图 13 的视图" tabs={[
+  { value: 'decode', label: '码字解码（图 12）', src: 'images/lapa/fig12.webp', alt: '论文图 12：Language Table 中 8 个码字解码出的画面', caption: '论文图 12：每一列是同一个码字作用在三个不同初始画面上的重建结果，底部是对应的运动方向，6 号码字是“不动”。' },
+  { value: 'scatter', label: '与真实动作对应（图 13）', src: 'images/lapa/fig13.webp', maxWidth: '24rem', alt: '论文图 13：真实 2D 动作的散点图，按潜在动作上色', caption: '论文图 13：横纵轴是真实的 2D 动作，颜色是 LAQ 给出的潜在动作（0 到 7）。不同码字大致占据不同的方向区域。' },
+]} />
+
+**2. Open-X（论文图 6）。** 同一个码字作用在不同机器人上，产生相似的运动，比如 $[1,1,3,2]$ 都是向下向左。
+
+<PaperFigure src="images/lapa/fig6.webp" alt="论文图 6：Open-X 上 6 个潜在动作分别作用在两种机器人上的重建结果" caption="论文图 6：上下两行是不同的机器人，每一列是同一个潜在动作，底部是人工标注的语义动作。" />
+
+**3. 人类视频（论文图 14）。** 很多码字对应的是相机的上下左右移动。也就是说，潜在动作同样会编码与操作无关的相机运动，这正是<Ref to="step-1">第 1 步</Ref>说的“$z$ 是变化，不是动作”。
+
+<PaperFigure src="images/lapa/fig14.webp" alt="论文图 14：人类视频中潜在动作解码出的画面，多数对应相机视角移动" caption="论文图 14：第一人称人类视频里，许多码字解码出来是整个画面的平移，即相机在动，而不是手在操作。" />
+
+**4. 闭环推演（论文图 7）。** 只做过预训练的 LAPA 给出潜在动作，LAQ 解码器生成下一帧，两者交替。“把西兰花从锅里拿出来”这个任务整体合理，但画面模糊，手臂离开时西兰花消失了。
+
+<PaperFigure src="images/lapa/fig7.webp" alt="论文图 7：LAPA 与 LAQ 解码器交替生成的 8 帧闭环推演" caption="论文图 7：从 $x_1$ 开始，LAPA 预测潜在动作、LAQ 解码器生成 $\hat x_2, \dots, \hat x_8$。" />
+
+### 小结
+
+LAPA 证明了在潜在空间里做预训练可以跨 embodiment 迁移，甚至能从人类视频里学到东西；但它的 $z$ 只由像素重建监督，容量里装的是“最显著的画面变化”。在固定机位的机器人数据上，这近似于动作；一旦有相机运动或背景变化，这个近似就开始失效。
+
+</Detail>
+
+</Step>

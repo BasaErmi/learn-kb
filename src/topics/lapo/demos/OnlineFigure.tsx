@@ -1,4 +1,4 @@
-import { Arrow, Box, C, DiagramFigure, Frame, T, useArrows } from './diagram'
+import { Arrow, Box, C, DiagramFigure, Frame, T, useArrows } from '@/kb/components/Diagram'
 
 /** 在线解码：共享冻结的卷积层，SL 头和 RL 头的 logits 取平均 */
 export function OnlineFigure() {

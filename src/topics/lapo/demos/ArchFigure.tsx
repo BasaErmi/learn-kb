@@ -1,4 +1,4 @@
-import { Arrow, Box, C, DiagramFigure, Frame, T, useArrows } from './diagram'
+import { Arrow, Box, C, DiagramFigure, Frame, T, useArrows } from '@/kb/components/Diagram'
 
 /** 第一阶段的结构：IDM 看三帧、FDM 看两帧，中间只隔着量化后的 z */
 export function ArchFigure() {

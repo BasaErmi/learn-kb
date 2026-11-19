@@ -11,9 +11,10 @@ import { Roadmap } from './components/Roadmap'
 import { Anchor, Ref } from './jump'
 import { Aside } from './components/Aside'
 import { Notation } from './components/Notation'
+import { PaperFigure, PaperFigTabs } from './components/PaperFigure'
 
 export const mdxComponents: MDXComponents = {
-  Step, KeyPoint, Detail, Pitfall, Quiz, Answer, Derivation, Figure, Flashcards, Card, Front, Back, Roadmap, Anchor, Ref, Aside, Notation,
+  Step, KeyPoint, Detail, Pitfall, Quiz, Answer, Derivation, Figure, Flashcards, Card, Front, Back, Roadmap, Anchor, Ref, Aside, Notation, PaperFigure, PaperFigTabs,
   a: (props) => <a {...props} target={props.href?.startsWith('http') ? '_blank' : undefined} rel="noreferrer" />,
   table: (props) => <div className="kb-table-wrap"><table {...props} /></div>,
 }

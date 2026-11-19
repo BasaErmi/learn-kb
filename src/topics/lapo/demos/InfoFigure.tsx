@@ -1,4 +1,4 @@
-import { C, DiagramFigure, T } from './diagram'
+import { C, DiagramFigure, T } from '@/kb/components/Diagram'
 
 type Seg = 'known' | 'act' | 'rand' | 'new'
 const SEG: Record<Seg, { color: string; name: string; h: number }> = {

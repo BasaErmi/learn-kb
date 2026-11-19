@@ -1,4 +1,4 @@
-import { Arrow, C, DiagramFigure, T, useArrows } from './diagram'
+import { Arrow, C, DiagramFigure, T, useArrows } from '@/kb/components/Diagram'
 
 const IDX = [12, 3, 57, 40, 8, 33, 21, 60] // 示意用的码字编号
 const X0 = 30, SW = 58, N = 8

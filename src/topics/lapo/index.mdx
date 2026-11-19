@@ -5,7 +5,7 @@ import { VQFigure } from './demos/VQFigure'
 import { StateDepFigure } from './demos/StateDepFigure'
 import { PipelineFigure } from './demos/PipelineFigure'
 import { OnlineFigure } from './demos/OnlineFigure'
-import { PaperFigure, PaperFigTabs, UmapCompare } from './demos/PaperFigs'
+import { UmapCompare } from './demos/PaperFigs'
 
 <section id="overview" className="kb-section">
 
@@ -25,7 +25,7 @@ IDM 同时看到前后两帧，FDM 只看到前一帧，两者之间唯一的通
 
 <Anchor id="fig-miner" />
 
-<PaperFigure src="fig1-miner.webp" alt="Miner 游戏潜在动作的 UMAP：上下左右四种动作各成一簇，旁边是 FDM 对每一簇预测的下一帧" caption="论文图 1：Miner 中每条转移的潜在动作（IDM 输出）降到二维后，按真实动作上色。四种移动方向各自聚成一簇，旁边的小图是 FDM 拿这一簇的潜在动作预测出的下一帧，角色正好朝对应的方向移动。训练全程没用任何动作标签，颜色只是事后上的。" />
+<PaperFigure src="images/lapo/fig1-miner.webp" alt="Miner 游戏潜在动作的 UMAP：上下左右四种动作各成一簇，旁边是 FDM 对每一簇预测的下一帧" caption="论文图 1：Miner 中每条转移的潜在动作（IDM 输出）降到二维后，按真实动作上色。四种移动方向各自聚成一簇，旁边的小图是 FDM 拿这一簇的潜在动作预测出的下一帧，角色正好朝对应的方向移动。训练全程没用任何动作标签，颜色只是事后上的。" />
 
 <Roadmap legend={{ goal: '问题', basis: '方法', pre: '流水线', core: '实验' }} nodes={[
   { id: 'step-1', label: '要解决的问题', sub: '视频没有动作标签', kind: 'goal' },
@@ -132,7 +132,7 @@ IDM 能看到过去和未来，FDM 只能看到过去。FDM 要预测准 $o_{t+1
 
 两个网络用同一个重建误差 $\|\hat o_{t+1} - o_{t+1}\|^2$ 联合训练。关键在于两者看到的信息不对称：$o_{t+1}$ 只有 IDM 看得到，FDM 想预测准它，唯一的线索就是 $z_t$。于是 IDM 被逼着把“这一步发生了什么”编码进 $z_t$，交给 FDM。
 
-<PaperFigure src="fig2-arch.webp" maxWidth="15rem" alt="论文图 2：IDM 接收 o_t 和 o_{t+1}，输出 z_t 给 FDM；FDM 接收 o_t 和 z_t，输出预测的下一帧" caption="论文图 2：IDM 和 FDM 都能看到 $o_t$，只有 IDM 能看到 $o_{t+1}$，中间的虚线是 $z_t$。" />
+<PaperFigure src="images/lapo/fig2-arch.webp" maxWidth="15rem" alt="论文图 2：IDM 接收 o_t 和 o_{t+1}，输出 z_t 给 FDM；FDM 接收 o_t 和 z_t，输出预测的下一帧" caption="论文图 2：IDM 和 FDM 都能看到 $o_t$，只有 IDM 能看到 $o_{t+1}$，中间的虚线是 $z_t$。" />
 
 ### 实际的输入和网络
 
@@ -361,8 +361,8 @@ $d$ 的输入只有 $z$。如果 $z$ 还残留着状态依赖（<Ref to="step-4"
 ### 在线解码：4M 步回到专家水平
 
 <PaperFigTabs label="论文图 3 的视图" tabs={[
-  { value: 'avg', label: '16 个游戏平均', src: 'fig3-avg.webp', maxWidth: '27rem', alt: '论文图 3 右：16 个游戏平均的相对回报随在线交互步数的变化', caption: '论文图 3 右：16 个游戏的平均回报，按各自的专家归一化（专家 = 1），横轴是在线交互步数。从上到下依次是 RL + SL、只用 RL 头、只用 RL 头且去掉 VQ、PPO 从零训练、从 ILPO 的潜在策略出发。' },
-  { value: 'games', label: '逐个游戏', src: 'fig3-games.webp', alt: '论文图 3 左：16 个游戏各自的回报曲线', caption: '论文图 3 左：16 个游戏各自的回报曲线（3 个种子的均值），虚线是专家。绿色是 RL + SL，蓝色是只用 RL 头，粉色是 PPO 从零训练。' },
+  { value: 'avg', label: '16 个游戏平均', src: 'images/lapo/fig3-avg.webp', maxWidth: '27rem', alt: '论文图 3 右：16 个游戏平均的相对回报随在线交互步数的变化', caption: '论文图 3 右：16 个游戏的平均回报，按各自的专家归一化（专家 = 1），横轴是在线交互步数。从上到下依次是 RL + SL、只用 RL 头、只用 RL 头且去掉 VQ、PPO 从零训练、从 ILPO 的潜在策略出发。' },
+  { value: 'games', label: '逐个游戏', src: 'images/lapo/fig3-games.webp', alt: '论文图 3 左：16 个游戏各自的回报曲线', caption: '论文图 3 左：16 个游戏各自的回报曲线（3 个种子的均值），虚线是专家。绿色是 RL + SL，蓝色是只用 RL 头，粉色是 PPO 从零训练。' },
 ]} />
 
 从平均曲线上能读出三件事：
@@ -380,8 +380,8 @@ SL 是 supervised learning，指在线解码里的监督头。`RL + SL` 表示�
 ### 离线解码：几百条标签就够，但会停在平台期
 
 <PaperFigTabs label="论文图 4 和图 6 的视图" tabs={[
-  { value: 'avg', label: '16 个游戏平均', src: 'fig4-offline.webp', maxWidth: '25rem', alt: '论文图 4：离线解码的平均相对回报随带标签帧数的变化', caption: '论文图 4：离线解码的平均回报随带标签帧数的变化（横轴是对数刻度，3 个种子的均值和标准差）。几条水平线是在线方案和 PPO 从零训练 4M 步的最终水平，供对照。' },
-  { value: 'games', label: '逐个游戏', src: 'fig6-offline-games.webp', alt: '论文图 6：16 个游戏各自的离线解码曲线', caption: '论文图 6（附录 A.1）：16 个游戏各自的离线解码曲线，纵轴是原始回报。' },
+  { value: 'avg', label: '16 个游戏平均', src: 'images/lapo/fig4-offline.webp', maxWidth: '25rem', alt: '论文图 4：离线解码的平均相对回报随带标签帧数的变化', caption: '论文图 4：离线解码的平均回报随带标签帧数的变化（横轴是对数刻度，3 个种子的均值和标准差）。几条水平线是在线方案和 PPO 从零训练 4M 步的最终水平，供对照。' },
+  { value: 'games', label: '逐个游戏', src: 'images/lapo/fig6-offline-games.webp', alt: '论文图 6：16 个游戏各自的离线解码曲线', caption: '论文图 6（附录 A.1）：16 个游戏各自的离线解码曲线，纵轴是原始回报。' },
 ]} />
 
 只用不到 256 条带标签的转移，离线解码就追平了 PPO 从零训练 4M 步的水平。解码器只是一个小 MLP，几百条数据就能训好，说明 $z$ 的结构和真实动作已经非常接近：解码器要做的，基本只是给每一簇潜在动作配上对应的按键。
@@ -422,7 +422,7 @@ LAPO 的 IDM 推断的是**实际发生的那条转移**，不需要枚举所有
 
 取 IDM 输出的**量化前**的 $z_t$，用 UMAP 降到二维，每个点是视频里的一条转移，按这条转移的真实动作上色。真实动作只用来上色，训练时没有用到。如果 $z$ 真的学到了动作，同一种颜色的点就应该聚在一起。
 
-<PaperFigure src="fig5-umap.webp" alt="论文图 5：16 个 Procgen 游戏的潜在动作 UMAP，按真实动作上色" caption="论文图 5：16 个游戏的潜在空间（有 VQ），颜色是真实动作。图例里的箭头是移动方向，W、S、A、D 是部分游戏里的功能键；NOOP 没有画出来。" />
+<PaperFigure src="images/lapo/fig5-umap.webp" alt="论文图 5：16 个 Procgen 游戏的潜在动作 UMAP，按真实动作上色" caption="论文图 5：16 个游戏的潜在空间（有 VQ），颜色是真实动作。图例里的箭头是移动方向，W、S、A、D 是部分游戏里的功能键；NOOP 没有画出来。" />
 
 ### 聚类清晰：动作结构被恢复了
 

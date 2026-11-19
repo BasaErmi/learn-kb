@@ -57,6 +57,7 @@ export const tagTones: Record<string, TagTone> = {
   强化学习: 'indigo',
   向量量化: 'plum',
   世界模型: 'teal',
+  VLA: 'rose',
 }
 
 export const toneOf = (tag: string): TagTone => tagTones[tag] ?? 'clay'

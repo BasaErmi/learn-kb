@@ -1,5 +1,15 @@
 # 变更日志
 
+## [2026-11-19] - Added
+- 新专题《LAPA：用潜在动作预训练 VLA》（`lapa`，具身智能 › 潜在动作，前置 LAPO，新标签 VLA）。论文带读类版式，共 5 步：问题与核心思路 → LAQ → 潜在预训练与动作微调 → 实验设置与主结果 → 消融与潜在动作分析。
+  - 6 张 SVG：三阶段流水线、LAQ 编码器与解码器（做差、CNN 定序列长度、量化、NSVQ、cross-attention）、$8^4$ 与 $256^7$ 的空间对比、做差带来的偏置（示意）、预训练到微调只换一层头、潜在动作与单步动作的时间粒度（示意）。
+  - 论文原图：图 1–9、12–16，图 12 和图 13 用分段按钮切换。NSVQ 的梯度细节和 LWM 主干放在旁注，NSVQ 留待单独条目。
+  - LAPA 第 1、3 步链回 LAPO 第 5 步。
+  - 相关文件：`src/topics/lapa/`、`public/images/lapa/`、`tests/e2e/lapa.spec.ts`、`src/topics/registry.ts`、`src/topics/taxonomy.ts`、`scripts/publish-exclude.txt`。
+
+## [2026-11-19] - Changed
+- 架构图积木从 `src/topics/lapo/demos/diagram.tsx` 移到 `src/kb/components/Diagram.tsx`；论文原图组件 `PaperFigure`、`PaperFigTabs` 移到 `src/kb/components/PaperFigure.tsx` 并注册进 MDX 全局组件，`src` 改为相对 `public/` 的完整路径。LAPO 页面内容不变。
+
 ## [2026-11-13] - Added
 - 新专题《LAPO：从无标签视频学潜在动作》（`lapo`，新领域“具身智能 › 潜在动作”，新标签：模仿学习、强化学习、向量量化、世界模型）。这是第一个论文带读类专题，共 7 步：要解决的问题 → IDM + FDM → 信息瓶颈 → 向量量化 → 三阶段流水线 → 实验结果 → 潜在空间。
   - 按论文类专题的版式做（见 ADR-004）：没有公式速查、易错点、自测卡片和计算演示；笔记里的思考题和补充问答融进正文或旁注。

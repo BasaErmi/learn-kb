@@ -1,4 +1,4 @@
-import { Arrow, Box, C, DiagramFigure, T, useArrows } from './diagram'
+import { Arrow, Box, C, DiagramFigure, T, useArrows } from '@/kb/components/Diagram'
 
 interface Step { title: string; sub: string; color: string }
 

@@ -25,7 +25,7 @@ Vite 8、React 19、TypeScript 5.9、MDX 3、KaTeX、Shiki、react-router 7（Ha
 - `npm run build`：打包到 `dist/`
 
 ## 知识库的组织
-- 每个专题挂在一个子领域下（`meta.area = '领域id/子领域id'`），首页按 `taxonomy.ts` 的顺序分组。目前有：机器学习基础 › 概率输出与损失（Softmax、交叉熵）、生成模型 › 扩散模型（CFG、LDM）、具身智能 › 潜在动作（LAPO）。
+- 每个专题挂在一个子领域下（`meta.area = '领域id/子领域id'`），首页按 `taxonomy.ts` 的顺序分组。目前有：机器学习基础 › 概率输出与损失（Softmax、交叉熵）、生成模型 › 扩散模型（CFG、LDM）、具身智能 › 潜在动作（LAPO、LAPA）。
 - `meta.tags` 是跨领域关键词，首页顶部可按标签筛选；专题页的面包屑和标签都链回首页的筛选结果（`#/?area=…`、`#/?tag=…`）。每个标签在 `taxonomy.ts` 的 `tagTones` 里登记一种色调（八种，色值在 `base.css` 的 `[data-tone]` 里），首页筛选、卡片和专题页头都用 `src/app/Tag.tsx` 显示成同色的圆角标签；类名是 `.kb-pill`，因为 `.kb-tag` 已经是演示图片上的角标。
 - `meta.prereqs` 是建议先读的专题，专题页头同时显示“建议先读”和自动算出的“被这些专题用到”。
 - 规则和理由见 ADR-003。领域 id 发布后不要改名。
@@ -55,7 +55,7 @@ Vite 8、React 19、TypeScript 5.9、MDX 3、KaTeX、Shiki、react-router 7（Ha
 演示组件（需在 MDX 中 import）里使用 `Demo`（`schematic` 标“示意”角标，`note` 写底部说明）、`Seg`（分段按钮）、`Slider`、`Tex`、`SvgSub`（`Sub`、`SvgTex`）。图片条用 `.kb-strip` + `.kb-tag`（左上角叠字标签）；宽 SVG 外面包 `.kb-svg-scroll`，手机上在框内横向滚动。演示要用的实测数据可以放在专题的 `lib/*.json` 里直接 import。
 `Roadmap` 的 `legend` 参数可以覆盖图例文字（默认是 CFG 的分类）。
 
-论文带读类专题（目前是 LAPO，版式见 ADR-004）的架构图用 `src/topics/lapo/demos/diagram.tsx` 里的积木：`T`（可夹公式的一行字）、`Box`（`frozen` 画虚线表示冻结）、`Arrow`、`Frame`（观测帧）、`useArrows`（按颜色生成箭头 marker，id 带 `useId` 前缀）、`DiagramFigure`（外框，图注是字符串时渲染公式）。论文原图用同目录 `PaperFigs.tsx` 的 `PaperFigure` / `PaperFigTabs`（分段按钮切换同一张图的不同版本），图放在 `public/images/<slug>/`，用 WebP。LAPO 的角色色在 `tokens.css` 里：`--c-obs`、`--c-idm`、`--c-fdm`、`--c-latent`、`--c-act`、`--c-pi`、`--c-rand`、`--c-new`。
+论文带读类专题（LAPO、LAPA，版式见 ADR-004）的架构图用 `src/kb/components/Diagram.tsx` 里的积木：`T`（可夹公式的一行字）、`Box`（`frozen` 画虚线表示冻结）、`Arrow`、`Frame`（观测帧）、`useArrows`（按颜色生成箭头 marker，id 带 `useId` 前缀）、`DiagramFigure`（外框，图注是字符串时渲染公式）。论文原图用 `src/kb/components/PaperFigure.tsx` 的 `PaperFigure` / `PaperFigTabs`（已注册为 MDX 全局组件，`src` 写 `images/<slug>/x.webp`；`PaperFigTabs` 用分段按钮切换同一张图的不同版本），图用 PyMuPDF 按区域渲染或提取后转成 WebP。LAPO 的角色色在 `tokens.css` 里：`--c-obs`、`--c-idm`、`--c-fdm`、`--c-latent`、`--c-act`、`--c-pi`、`--c-rand`、`--c-new`。
 
 ## localStorage 键
 - `kb:reviewMode`：是否处于复习模式

@@ -1,4 +1,4 @@
-import { Arrow, Box, C, DiagramFigure, Frame, T, useArrows } from './diagram'
+import { Arrow, Box, C, DiagramFigure, Frame, T, useArrows } from '@/kb/components/Diagram'
 
 const BH = 46
 const LABEL_W = 92

@@ -221,7 +221,7 @@ test('a failed topic chunk shows a recoverable error instead of a blank page', a
 })
 
 test('notation is collapsed by default and expands on click in every topic', async ({ page }) => {
-  for (const slug of ['cfg', 'ldm', 'softmax', 'cross-entropy', 'lapo', 'lapa']) {
+  for (const slug of ['cfg', 'ldm', 'softmax', 'cross-entropy', 'lapo', 'lapa', 'univla']) {
     await page.goto(`./#/t/${slug}`)
     const box = page.locator('#overview .kb-notation')
     await expect(box).not.toHaveAttribute('open')

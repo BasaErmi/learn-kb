@@ -1,5 +1,15 @@
 # 变更日志
 
+## [2026-11-24] - Changed
+- UniVLA 第 2 步的 LAM 图改为可在 Stage 1 / Stage 2 之间切换：骨架相同，Stage 1 编码器多拼语言 $\ell$，Stage 2 换成 $a_{TC}$ 并画出冻结的 $\mathrm{VQ}_{TI}$ 和新的 $\mathrm{VQ}_{TC}$。原图画的是论文里不存在的不带语言的 LAM。`DiagramFigure` 新增 `controls` 插槽。相关文件：`src/topics/univla/demos/LAMFigure.tsx`、`src/kb/components/Diagram.tsx`、`src/styles/demo.css`。
+
+## [2026-11-24] - Added
+- 新专题《UniVLA：以任务为中心的潜动作》（`univla`，具身智能 › 潜在动作，前置 LAPA）。论文带读类版式，共 7 步：动机与三阶段框架 → LAM 骨架与 DINOv2 特征空间 → 两阶段语言解耦 → 策略预训练 → 下游适配 → 主要实验结果 → LAM 的证据与消融。
+  - 7 张 SVG：三阶段流水线、LAM 骨架（DINOv2、query token、VQ、不看历史帧的解码器）、Stage 1 / Stage 2 输入输出对比、目标帧信息在两个阶段走哪条通道（示意）、策略预训练（离线打标签与 ACT token）、动作解码器（两次 attention pooling）、历史潜动作在训练和推理时的来源。
+  - 论文原图：图 1–10、A-1、A-2，图 A-1 和 A-2 用分段按钮切换。笔记的“局限性与我的疑问”一章不放；笔记里对机制的澄清和对证据的点评按 Guanlin 的意思保留。
+  - 第 1 步链回 LAPA。
+  - 相关文件：`src/topics/univla/`、`public/images/univla/`、`tests/e2e/univla.spec.ts`、`src/topics/registry.ts`、`scripts/publish-exclude.txt`。
+
 ## [2026-11-19] - Added
 - 新专题《LAPA：用潜在动作预训练 VLA》（`lapa`，具身智能 › 潜在动作，前置 LAPO，新标签 VLA）。论文带读类版式，共 5 步：问题与核心思路 → LAQ → 潜在预训练与动作微调 → 实验设置与主结果 → 消融与潜在动作分析。
   - 6 张 SVG：三阶段流水线、LAQ 编码器与解码器（做差、CNN 定序列长度、量化、NSVQ、cross-attention）、$8^4$ 与 $256^7$ 的空间对比、做差带来的偏置（示意）、预训练到微调只换一层头、潜在动作与单步动作的时间粒度（示意）。

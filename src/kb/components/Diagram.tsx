@@ -80,11 +80,12 @@ export function Frame({ x, y, s = 46, w = s, label, color = C.obs, hot, size = 1
   )
 }
 
-/** 图外框：可横向滚动的 SVG + 图注（图注是字符串时按 `$...$` 渲染公式）；四周留 PAD 的边，贴边的线和字不会被裁掉 */
+/** 图外框：可选的控件（如分段按钮）+ 可横向滚动的 SVG + 图注（图注是字符串时按 `$...$` 渲染公式）；四周留 PAD 的边，贴边的线和字不会被裁掉 */
 const PAD = 8
-export function DiagramFigure({ w, h, label, children, caption, schematic }: { w: number; h: number; label: string; children: ReactNode; caption: ReactNode; schematic?: boolean }) {
+export function DiagramFigure({ w, h, label, children, caption, schematic, controls }: { w: number; h: number; label: string; children: ReactNode; caption: ReactNode; schematic?: boolean; controls?: ReactNode }) {
   return (
     <figure className="kb-figure kb-diagram">
+      {controls && <div className="kb-controls kb-paperfig-ctl">{controls}</div>}
       <div className="kb-svg-scroll">
         <svg viewBox={`${-PAD} ${-PAD} ${w + 2 * PAD} ${h + 2 * PAD}`} className="kb-chart" role="img" aria-label={label}>
           {children}

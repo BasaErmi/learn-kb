@@ -1,0 +1,445 @@
+import { PipelineFigure } from './demos/PipelineFigure'
+import { LAMFigure } from './demos/LAMFigure'
+import { DecoupleFigure, InfoSplitFigure } from './demos/DecoupleFigures'
+import { PolicyFigure, DecoderFigure, HistoryFigure } from './demos/PolicyFigures'
+
+<section id="overview" className="kb-section">
+
+## 总览与记号
+
+<KeyPoint>
+
+$$
+\text{Stage 1：}\ \hat O_{t+k} = \mathcal{F}([O_t;\ \tilde a_{TI};\ \ell]) \qquad \longrightarrow \qquad \text{Stage 2：}\ \hat O_{t+k} = \mathcal{F}([O_t;\ \tilde a_{TI};\ \tilde a_{TC}])
+$$
+
+UniVLA 从无动作标签的视频里学一个**以任务为中心的离散潜动作空间**：先让一组潜动作 $\tilde a_{TI}$ 吸收“语言解释不了的变化”，再拿掉语言，让新的一组潜动作 $\tilde a_{TC}$ 接替语言的角色。VLM 在 $\tilde a_{TC}$ 的空间里做跨具身预训练，最后用一个轻量解码头适配到具体机器人（Bu et al.，arXiv:2505.06111）。
+
+</KeyPoint>
+
+VLA 想变得通用，就得吃下更多数据；但 Franka、WidowX、人手、导航机器人的动作空间各不相同，人类视频更是根本没有动作标签。<Ref topic="lapa" to="overview">LAPA</Ref> 已经证明，用“两帧之间的变化”学出的潜动作可以代替动作标签做预训练。UniVLA 往前走了一步：它认为 LAPA 这类方法从像素里编码了**所有**视觉变化，相机抖动、旁人走动、光照纹理变化都混进了伪标签，于是在两处下手过滤——换到 DINOv2 特征空间去掉外观干扰，再用语言条件把“与任务无关的动态”分到另一套码本里。
+
+三个关键词：
+
+1. **DINOv2 特征空间预测**：去掉光照、纹理这类外观干扰。
+2. **两阶段语言解耦**：去掉相机运动、旁人走动这类外部动态。
+3. **潜动作 token + 轻量解码头**：跨具身统一接口，预训练和适配都省算力。
+
+<PaperFigure src="images/univla/fig1.webp" alt="论文图 1：UniVLA 从机器人操作、人类视频、室内外导航数据中学出统一的 task-centric 潜动作空间，并在 LIBERO、SimplerEnv、真实机器人、CALVIN、Room2Room 上与 OpenVLA 对比" caption="论文图 1：UniVLA 从机器人操作、人类视频、室内外导航这几类异构数据中推出统一的 task-centric 潜动作空间。右侧是和 OpenVLA 的对比：LIBERO 95.2 对 76.5，SimplerEnv 47.9 对 1，真实机器人 81.7 对 38.3，CALVIN 56.5 对 43.5，Room2Room 47.1 对 17.5。" />
+
+| 关键数字 | 数值 |
+| --- | --- |
+| 潜动作空间 | $N = 4$ 个 token，码本 $\lvert C\rvert = 16$：$16^4 = 65536$ 种，16 bit |
+| 帧间隔 | 按各数据集帧率校准，约 1 秒 |
+| 策略主干 | Prismatic-7B（SigLIP + DINOv2 → 投影 → LLaMA-2 7B） |
+| 预训练算力 | 约 960 A100 小时，OpenVLA 为 21,500 |
+| 动作解码头 | 约 12.6M 参数；LoRA 后可训练参数约 123M |
+| LIBERO 平均 | 95.2，OpenVLA 76.5 |
+| 真实机器人平均 | 81.7，LAPA 45.0 |
+
+<Roadmap legend={{ goal: '问题', basis: '方法', core: '实验' }} nodes={[
+  { id: 'step-1', label: '动机与框架', sub: '伪标签里该装什么', kind: 'goal' },
+  { id: 'step-2', label: 'LAM 骨架', sub: 'DINOv2 空间里的 IDM + FDM', kind: 'basis' },
+  { id: 'step-3', label: '语言解耦', sub: 'TI 吸收干扰，TC 接替语言', kind: 'basis' },
+  { id: 'step-4', label: '策略预训练', sub: '预测 4 个 ACT token', kind: 'basis' },
+  { id: 'step-5', label: '下游适配', sub: '解码头 + 历史潜动作', kind: 'basis' },
+  { id: 'step-6', label: '主要结果', sub: '操作、导航、真机', kind: 'core' },
+  { id: 'step-7', label: 'LAM 的证据', sub: 'Table III 与消融', kind: 'core' },
+]} />
+
+<Notation>
+
+| 记号 | 含义 |
+| --- | --- |
+| $o_t$，$o_{t+k}$ | 当前帧和约 1 秒后的帧；$k$ 按数据集帧率校准 |
+| $O_t$，$O_{t+k}$ | 两帧的 DINOv2 patch 特征，既是 LAM 的输入，也是预测目标 |
+| $\ell$ | 语言指令，LAM 里用 T5 编码 |
+| $\mathcal{I}$，$\mathcal{F}$ | LAM 的编码器（相当于 IDM）和解码器（相当于 FDM） |
+| $N$，$\lvert C\rvert$ | 潜动作的 token 个数和码本大小，$N = 4$，$\lvert C\rvert = 16$ |
+| $a_{TI}$ → $\hat a_{TI}$ → $\tilde a_{TI}$ | task-irrelevant 的 query 参数 → query 位置的编码器输出 → 量化后的码字 |
+| $a_{TC}$ → $\hat a_{TC}$ → $\tilde a_{TC}$ | task-centric 的同一组记号，只在 Stage 2 出现 |
+| $a_{z,i}$ | 第 $i$ 个潜动作 token 的码本索引，$i = 1, \dots, 4$ |
+| $\mathrm{ACT}_1, \dots, \mathrm{ACT}_{16}$ | VLM 词表里新加的 16 个潜动作 token |
+| $E_v$，$E_a$ | VLM 最后一层的视觉隐状态和潜动作隐状态 |
+| TI / TC | task-irrelevant / task-centric |
+
+</Notation>
+
+</section>
+
+<Step id="step-1" n={1} title="动机与三阶段框架" gist="现有 VLA 依赖真实动作标签，用不上无标签视频，也难以跨具身；已有潜动作方法又把任务无关的动态一起编码进了伪标签。UniVLA 要学一个统一、且只含任务相关动态的潜动作空间。">
+
+<KeyPoint>
+
+三个阶段：
+
+1. **Task-centric 潜动作学习**（Sec. III-A）：在无标签视频上训练 LAM，给每对帧 $(o_t, o_{t+k})$ 打上离散潜动作伪标签。
+2. **策略预训练**（Sec. III-B）：Prismatic-7B 输入当前图像和指令，自回归预测潜动作 token，约 960 A100 小时。
+3. **下游适配**（Sec. III-C）：LoRA 微调加一个约 12.6M 参数的动作解码头，把潜动作翻译成具体机器人的 action chunk。
+
+LAM 本质上是**标签生成器**，后面所有设计都围绕一个问题：伪标签里装的信息，是不是策略真正该学的。
+
+</KeyPoint>
+
+<Detail>
+
+### 要解决什么问题
+
+RT-2、OpenVLA 这类 VLA 直接预测真实动作，因此离不开动作标签。这带来三个困难：
+
+- **动作空间异构**：Franka、WidowX、人手、导航机器人的动作空间各不相同，难以直接混在一起训练。
+- **人类视频没有动作标签**：规模最大的数据反而用不上。
+- **已有潜动作方法的缺陷**：Genie、LAPA、IGOR 从原始像素编码**所有**视觉变化，潜动作里会混入相机抖动、旁人运动、新物体出现、光照纹理变化等任务无关的动态，污染了策略的监督信号。
+
+前两条是 <Ref topic="lapa" to="step-1">LAPA</Ref> 已经回答过的问题：用潜动作代替真实动作。UniVLA 的出发点是第三条。所以它的目标不只是“统一的动作表示”，而是**统一、且只包含任务相关动态**的动作表示，这样包括人类视频在内的异构视频才都能拿来预训练策略。
+
+### 三个阶段
+
+<PipelineFigure />
+
+三个阶段的分工和 LAPA 类似，区别在每一阶段的细节：
+
+| | LAPA | UniVLA |
+| --- | --- | --- |
+| 潜动作的预测空间 | 像素 | DINOv2 特征 |
+| 与任务无关的动态 | 不处理 | 两阶段语言条件，分到另一套码本 |
+| 潜动作空间 | $8^4$ | $16^4$ |
+| 帧间隔 | 约 0.6 s | 约 1 s |
+| 适配方式 | 丢掉潜动作头，换动作头全量微调 | 保留潜动作 token，LoRA + 读隐状态的解码头 |
+
+</Detail>
+
+</Step>
+
+<Step id="step-2" n={2} title="LAM 骨架与 DINOv2 特征空间" gist="LAM 是带信息瓶颈的 IDM + FDM：编码器用 4 个可学习 query 汇聚两帧间的变化，量化到 16 个码字之一，解码器只凭当前帧和潜动作预测未来；预测放在冻结的 DINOv2 特征空间里，先滤掉外观干扰。">
+
+<KeyPoint>
+
+$$
+\mathcal{L}_{\text{rec}} = \big\| \hat O_{t+k} - O_{t+k} \big\|^2, \qquad N \log_2 \lvert C\rvert = 4 \times \log_2 16 = 16\ \text{bit}
+$$
+
+解码器已经有当前帧，缺的只是“变了什么”，而这只能经潜动作传过去。瓶颈只有 16 bit，所以只能装对预测误差贡献最大的变化。DINOv2 特征偏语义、保留空间结构，光照、纹理这类外观变化不再和真实动作争抢这 16 bit。
+
+</KeyPoint>
+
+<Detail>
+
+### 带瓶颈的 IDM + FDM
+
+论文里没有一个“不带语言”的 LAM：第一个实际训练的就是 Stage 1。下图可以在两个阶段之间切换，骨架完全相同，区别只在编码器多拼的那一组 token：Stage 1 加入的是语言 $\ell$，Stage 2 换成新的一组 query $a_{TC}$。为什么要这样分两步，留到<Ref to="step-3">第 3 步</Ref>讲；这一步先看共同的部分：DINOv2 特征、query 加 VQ 的瓶颈、不看历史帧的解码器。
+
+<LAMFigure />
+
+- **输入**：一对帧 $(o_t, o_{t+k})$，$k$ 按各数据集的帧率校准，让间隔都约为 **1 秒**。一个潜动作约等于 1 秒的行为，所以后面能自然地解码成一个 action chunk。
+- **编码器 = IDM**：带因果时间 mask 的时空 transformer。序列末尾拼上 $N$ 个**可学习的 query token**，它们是与样本无关的参数，作用类似 [CLS] 或 DETR 的 query，通过注意力汇聚两帧之间的变化；取这些位置的输出去量化。
+- **量化**：VQ-VAE，码本大小 $\lvert C\rvert$。
+- **解码器 = FDM**：空间 transformer，根据当前帧和量化后的潜动作（Stage 1 里还有 $\ell$）预测未来帧。**不给更早的历史帧**，防止信息绕过潜动作这条通道。
+
+容量的取舍：$N = 4$、$\lvert C\rvert = 16$ 时瓶颈是 16 bit。容量太大，LAM 会退化成图像压缩，策略要预测的东西也更难学。
+
+<Aside title="同一个字母的三种形态">
+
+论文里 $a_{TI}$、$\hat a_{TI}$、$\tilde a_{TI}$ 是三样东西：$a_{TI}$ 是输入的 query 参数，所有样本共享；$\hat a_{TI}$ 是 query 位置的编码器输出；$\tilde a_{TI}$ 是量化后的码字。TC 的记号同理。
+
+</Aside>
+
+### 在 DINOv2 特征空间里预测
+
+受 JEPA 和 DINO-WM 的启发，LAM 用冻结的 DINOv2 提取 patch 特征 $O_t$、$O_{t+k}$，它们既是输入也是预测目标：
+
+$$
+\mathcal{L}_{\text{rec}} = \big\| \hat{O}_{t+k} - O_{t+k} \big\|^2 \quad (+\ \text{VQ 的 codebook / commitment 项，论文未写})
+$$
+
+- **为什么不用像素**：像素重建会让光照、纹理、反光和真实动作争抢那 16 bit。DINOv2 特征偏语义、保留空间结构，先把这些外观干扰过滤掉。这个问题在网络规模、众包采集的视频里更突出。
+- **会不会坍缩**：目标编码器是冻结的，不存在 JEPA 式的表征坍缩；帧间隔又有 1 秒，平凡解 $\hat O_{t+k} = O_t$ 的误差通常很大。
+- **解决不了什么**：相机运动、旁人走动这类“有意义但与任务无关”的动态，在 DINOv2 空间里同样显著。这要靠下一步的语言解耦。
+
+</Detail>
+
+<Pitfall title="DINOv2 只管外观，不管外部动态">
+
+换到特征空间只去掉了光照、纹理、反光这类外观干扰。相机在动、旁人在走，这些变化在语义特征里一样明显，仍会占用瓶颈。处理它们的是第 3 步的两阶段语言解耦。
+
+</Pitfall>
+
+</Step>
+
+<Step id="step-3" n={3} title="两阶段语言解耦" gist="Stage 1 把指令同时给编码器和解码器，潜动作只需编码“当前帧加指令预测不出来的变化”；Stage 2 冻结这套码本、拿掉语言，新加的一组潜动作被迫接替语言的角色，成为策略的伪标签。">
+
+<KeyPoint>
+
+$$
+\begin{aligned}
+&\text{Stage 1：}\ \hat a_{TI} = \mathcal{I}([O_t;\ O_{t+k};\ a_{TI};\ \ell]),\quad \tilde a_{TI} = \mathrm{VQ}(\hat a_{TI}),\quad \hat O_{t+k} = \mathcal{F}([O_t;\ \tilde a_{TI};\ \ell]) \\
+&\text{Stage 2：}\ \{\hat a_{TI}, \hat a_{TC}\} = \mathcal{I}([O_t;\ O_{t+k};\ a_{TI};\ a_{TC}]),\quad \hat O_{t+k} = \mathcal{F}([O_t;\ \tilde a_{TI};\ \tilde a_{TC}])
+\end{aligned}
+$$
+
+“task-irrelevant”的准确含义是**语言解释不了的变化**，不是某个固定的物理类别。最终只用 $\tilde a_{TC}$ 当策略的伪标签，$\tilde a_{TI}$ 丢弃。
+
+</KeyPoint>
+
+<Detail>
+
+<PaperFigure src="images/univla/fig2.webp" alt="论文图 2：两阶段潜动作学习，左为 Stage 1，T5 编码的指令送入编码器和解码器；右为 Stage 2，复制权重，新增 task-centric 潜动作" caption="论文图 2：左为 Stage 1，T5 编码的任务指令同时送进编码器和解码器，绿色三角是 task-irrelevant 潜动作；右为 Stage 2，复制 Stage 1 的权重，新加一组 task-centric 潜动作（红色三角），去掉语言输入。" />
+
+<DecoupleFigure />
+
+### Stage 1：让语言先把任务说掉
+
+T5 编码的指令 $\ell$ 同时送进编码器和解码器：
+
+$$
+\hat a_{TI} = \mathcal{I}([O_t;\ O_{t+k};\ a_{TI};\ \ell]),\quad \tilde a_{TI} = \mathrm{VQ}(\hat a_{TI}),\quad \hat O_{t+k} = \mathcal{F}([O_t;\ \tilde a_{TI};\ \ell])
+$$
+
+- 解码器“免费”拿到了 $\ell$，凡是 $O_t$ 加 $\ell$ 就能预测的变化，都不值得再占瓶颈。
+- 所以 $\tilde a_{TI}$ 装的是 **$O_{t+k}$ 中从 $O_t$ 和 $\ell$ 预测不出来的那部分**。编码器看得到 $O_{t+k}$ 和 $\ell$，只需要发送这份“残差”。
+- 编码器也要输入 $\ell$：它得知道解码器已经知道什么，才能只编码残差。
+- Stage 1 的产物不是标签，而是一条训练好的“干扰通道”：TI 码本、query 和编解码器。
+
+### Stage 2：拿掉语言，让新的潜动作接替
+
+复制 Stage 1 的权重，**冻结 TI 码本**，去掉语言，新加 task-centric 的 query $a_{TC}$ 和新码本 $\mathrm{VQ}_{TC}$：
+
+$$
+\{\hat a_{TI}, \hat a_{TC}\} = \mathcal{I}([O_t;\ O_{t+k};\ a_{TI};\ a_{TC}]),\quad \hat O_{t+k} = \mathcal{F}([O_t;\ \tilde a_{TI};\ \tilde a_{TC}])
+$$
+
+| | 干扰通道 | 任务通道 |
+| --- | --- | --- |
+| Stage 1 | $\tilde a_{TI}$ | $\ell$（语言，不受容量限制） |
+| Stage 2 | $\tilde a_{TI}$（码本冻结） | $\tilde a_{TC}$（新码本） |
+
+<InfoSplitFigure />
+
+- 拿掉 $\ell$ 之后重建误差上升，新的 $\tilde a_{TC}$ 被迫接替语言的角色。它是逐窗口从两帧推断出来的，比 episode 级的指令更细。
+- **最终只用 $\tilde a_{TC}$ 当策略的伪标签**，$\tilde a_{TI}$ 丢弃。Stage 2 的 LAM 不需要语言，打标签时只要视频帧。
+
+### 复习时要记住的三处修正
+
+- **“task-irrelevant”是“语言解释不了的变化”**，不是固定的物理类别。导航数据里，指令描述的就是移动，所以相机的前进运动会进 TC（论文图 8 的 Group C）。
+- **TI 并不纯**：$\ell$ 是 episode 级的，$O_t$ 加 $\ell$ 只能确定动作的大方向，具体的轨迹、速度、时机等细节也会进 $\tilde a_{TI}$。
+- **Stage 2 没有机制把这些细节迁移到 TC**：重建损失只看信息总量，不管走哪条通道；论文只冻结了 TI 码本，编码器、query、解码器照常更新。分工靠训练顺序和初始化来引导，没有显式约束。
+
+</Detail>
+
+<Pitfall title="TC 和 TI 的分工没有显式约束">
+
+论文只冻结了 TI 的码本。Stage 2 里编码器、query 和解码器都在更新，重建损失也不在乎信息走哪条通道，所以 TC 只装任务、TI 只装干扰并没有被强制保证，靠的是训练顺序和初始化。
+
+</Pitfall>
+
+</Step>
+
+<Step id="step-4" n={4} title="策略预训练" gist="冻结的 LAM 离线给每对帧打上 4 个码本索引，VLM 只看当前帧和指令，用 next-token 交叉熵预测它们；输出空间从 OpenVLA 的 $256^7$ 缩到 $16^4$，预训练约 960 A100 小时。">
+
+<KeyPoint>
+
+$$
+\mathcal{L} = \mathbb{E}_{o_t,\ell,a_{z,<i}}\Big[-\sum_{i=1}^{4} \log \pi_\phi\big(\hat a_{z,i} = a_{z,i} \mid o_t, \ell, a_{z,<i}\big)\Big]
+$$
+
+标签由 LAM 看 $(o_t, o_{t+k})$ 算出，策略只看 $o_t$，所以策略实际上在**预测接下来约 1 秒的变化**，是规划器而不是控制器。
+
+</KeyPoint>
+
+<Detail>
+
+<PolicyFigure />
+
+### 打标签与训练
+
+1. **打标签**：对每对 $(o_t, o_{t+k})$ 取 $\tilde a_{TC}$ 的 4 个码本索引，样本变成 $(o_t, \ell, z_1, \dots, z_4)$，$z_i \in \{1, \dots, 16\}$。真实动作和本体状态在预训练中**全部不用**，所以 OpenX、GNM 导航数据和 Ego4D 人类视频可以混在一起训练。
+2. **主干**：Prismatic-7B，即 SigLIP + DINOv2 视觉编码器 → 投影层 → LLaMA-2 7B。输入只有 $o_t$ 和 $\ell$，**没有 $o_{t+k}$**。
+3. **扩词表**：新加 16 个专用 token $\mathrm{ACT}_1, \dots, \mathrm{ACT}_{16}$，索引 $i$ 对应 $\mathrm{ACT}_i$。OpenVLA 的做法是借用 256 个低频词来表示动作 bin。
+4. **损失**：标准的 next-token 交叉熵，见上面的要点框。
+
+<PaperFigure src="images/univla/fig3.webp" maxWidth="30rem" alt="论文图 3：通用策略的结构，视觉编码器和 tokenizer 输入自回归 transformer，输出潜动作 token，动作解码器把它们翻译成异构动作空间的动作" caption="论文图 3：策略结构。DINOv2 和 SigLIP 编码第三视角 RGB，指令经 tokenizer，一起送进自回归 transformer 预测潜动作 token；下游适配时，动作解码器以视觉信息为 query、潜动作为 K/V，输出具体机器人的动作。" />
+
+### 要点
+
+- **输出空间小**：从 OpenVLA 的 $256^7$ 缩小到 $16^4 = 65536$，这是收敛快的主要原因之一。
+- **码字几何丢失**：LAM 码字的向量本身没有被使用，VLM 只用索引，重新学 ACT token 的嵌入，码字之间的几何关系丢了。下游解码时用隐状态部分补回。
+- **训练配置**：全参数训练，batch 1024，学习率 2e-5，20k 步，32 张 A100 约 30 小时，合计约 **960 A100 小时**（OpenVLA 为 21,500）。只用 Bridge 或只用人类视频的版本约 200 A100 小时。
+- **算力口径**：960 小时大概率**不含** LAM 训练和打标签的开销，论文没有报告。
+
+</Detail>
+
+</Step>
+
+<Step id="step-5" n={5} title="下游适配" gist="推理时 VLM 仍然自回归生成 4 个 ACT token，但动作由这些位置的连续隐状态加视觉信息解码；上一步输出的潜动作作为历史放回 prompt，只用一步。">
+
+<KeyPoint>
+
+$$
+E_v' = \mathcal{A}(Q = q_v,\ K = V = E_v),\qquad E_a' = \mathcal{A}(Q = q_a + E_v',\ K = V = E_a)
+$$
+
+潜动作说“做什么”，视觉说“在哪里做”。$E_a'$ 经线性层直接输出 action chunk；VLM 用 LoRA，损失是潜动作 token 交叉熵加动作的 L1。
+
+</KeyPoint>
+
+<Detail>
+
+### 动作解码器
+
+<DecoderFigure />
+
+- 取 VLM 最后一层的视觉隐状态 $E_v$ 和潜动作隐状态 $E_a$，做两次 attention pooling，$q_v$、$q_a$ 是可学习的 query。视觉向量加到 query 上去读潜动作。
+- $E_a'$ 经线性层直接输出 action chunk，输出维度等于动作维度乘以 chunk 长度，真机上 chunk 为 12。真机另加本体状态 MLP，整个头约 12.6M 参数。
+- **训练**：VLM 用 LoRA，可训练参数约 123M；损失是潜动作 token 交叉熵加动作 L1，需要目标机器人的少量真实动作。
+- **为什么推理时仍要生成离散 token**：一是要自回归生成才能得到后面位置的隐状态，二是它要作为下一步的历史输入。
+- **跨具身性**：离散 token 仍被交叉熵锚定在统一空间里，但 LoRA 之后的隐状态和解码头会适应特定的机器人，可以概括成“接口统一、表示专用”。论文没有分析这种漂移有多大。
+
+### 历史潜动作
+
+<HistoryFigure />
+
+- **动机**：多帧历史图像对 7B 模型太贵也冗余；一个潜动作只有 4 个 token，却概括了约 1 秒内发生的事。做法借鉴了 Chain-of-Thought。
+- **训练时**：用 LAM 给历史帧对打标签，拼在指令后面。
+- **推理时**：除第一步外，把**上一步策略自己输出**的 4 个 token 放进 prompt，只用一步历史。
+- 训练用的是 LAM 对真实帧的标签，推理用的是策略自己的预测，存在类似 exposure bias 的不一致。只有一步历史，它更像“惯性”或“阶段信号”，而不是记忆。
+
+</Detail>
+
+</Step>
+
+<Step id="step-6" n={6} title="主要实验结果" gist="LIBERO 平均 95.2（OpenVLA 76.5），只用 Bridge 预训练也有 92.5、只用人类视频 88.7；真机 4 个任务平均 81.7（LAPA 45.0）；泛化测试平均 68.9，但视觉干扰物让它掉得最多。">
+
+<KeyPoint>
+
+| 基准 | UniVLA | 对比 |
+| --- | --- | --- |
+| LIBERO 平均 | 95.2 | OpenVLA 76.5，LAPA 65.7 |
+| CALVIN ABC→D 5 连 | 56.5 | OpenVLA 43.5 |
+| SimplerEnv-Bridge | 47.9 | OpenVLA 1.0 |
+| R2R oracle SR | 47.1 | OpenVLA 17.5，NaVid 49.1 |
+| 真机 4 任务平均 | 81.7 | LAPA 45.0，OpenVLA 38.3 |
+| 真机泛化平均 | 68.9 | LAPA 28.9 |
+
+</KeyPoint>
+
+<Detail>
+
+### 主要结果
+
+| 基准 | UniVLA | 对比 | 备注 |
+| --- | --- | --- | --- |
+| LIBERO 平均（Table I） | 95.2 | OpenVLA 76.5，LAPA 65.7 | 只用第三视角 RGB；只用 Bridge 预训练也有 92.5，只用人类视频 88.7 |
+| CALVIN ABC→D 5 连（Table A-II） | 56.5 | OpenVLA 43.5 | 平均完成长度 3.80 |
+| SimplerEnv-Bridge（Table A-III） | 47.9 | OpenVLA 1.0 | |
+| R2R oracle SR（论文图 6） | 47.1 | OpenVLA 17.5，NaVid 49.1 | 只用单帧加历史潜动作 |
+| 真机 4 任务平均（Table A-V） | 81.7 | LAPA 45.0，OpenVLA 38.3 | Piper 机械臂，10 Hz |
+| 真机泛化平均（Table II） | 68.9 | LAPA 28.9 | 光照、干扰物、新物体 |
+
+### LIBERO
+
+<PaperFigure src="images/univla/fig4.webp" maxWidth="26rem" alt="论文图 4：LIBERO 的四个任务套件 Spatial、Object、Goal、Long 的示例" caption="论文图 4：LIBERO 的四个套件。Spatial：物体相同、布局没见过；Object：布局相同、物体不同；Goal：物体和布局都相同、目标不同；Long：长程多步任务。" />
+
+| 方法 | Spatial | Object | Goal | Long | 平均 |
+| --- | --- | --- | --- | --- | --- |
+| LAPA（作者复现） | 73.8 | 74.6 | 58.8 | 55.4 | 65.7 |
+| Diffusion Policy | 78.3 | 92.5 | 68.3 | 50.5 | 72.4 |
+| Octo | 78.9 | 85.7 | 84.6 | 51.1 | 75.1 |
+| OpenVLA | 84.7 | 88.4 | 79.2 | 53.7 | 76.5 |
+| UniVLA（人类视频） | 91.2 | 94.2 | 90.2 | 79.4 | 88.7 |
+| UniVLA（Bridge） | 95.2 | 95.4 | 91.9 | 87.5 | 92.5 |
+| UniVLA（全部） | 96.5 | 96.8 | 95.6 | 92.0 | 95.2 |
+
+（论文 Table I 节选。）LIBERO 的场景没有出现在策略和 LAM 的预训练数据里；LAPA 是作者用 Prismatic-7B 重新复现的。
+
+### 导航：Room2Room
+
+<PaperFigure src="images/univla/fig6.webp" maxWidth="28rem" alt="论文图 6：R2R 上各方法的 oracle 成功率" caption="论文图 6：VLN-CE 中 R2R 的 oracle 成功率。UniVLA 只用单帧 RGB 和历史潜动作就达到 47.1，和看全部历史观测的 NaVid（49.1）相当，明显高于 OpenVLA（17.5）。" />
+
+### 真实机器人
+
+<PaperFigure src="images/univla/fig5.webp" alt="论文图 5：四个真机任务的成功率和平均得分" caption="论文图 5：四个真机任务：Store the screwdriver、Clean the cutting board、Fold towel twice、Stack tower of hanoi。右侧为平均成功率（UniVLA 81.7，LAPA 45.0，OpenVLA 38.3，Diffusion Policy 33.3）和平均得分（2.63、1.95、1.63、1.45）。" />
+
+实验用 AgileX 的 Piper 机械臂（7 自由度）和一个第三视角相机，只用 RGB。每个任务采 20～80 条轨迹做微调，控制频率 10 Hz。叠毛巾一项单任务训练的 Diffusion Policy 更好（53.3 对 46.7），作者认为它对固定轨迹拟合得更精确；但 UniVLA 的分步得分更高。
+
+### 真机泛化
+
+<PaperFigure src="images/univla/fig7.webp" maxWidth="26rem" alt="论文图 7：泛化测试的三种设定：光照变化、视觉干扰物、新物体" caption="论文图 7：在 Store the screwdriver 任务上改变测试条件。光照变化：调暗环境光并加定向强光；视觉干扰物：桌上加碗、笔记本、胶带；新物体：螺丝刀换成没见过的记号笔。" />
+
+| 方法 | 光照变化 | 视觉干扰物 | 新物体 | 平均 |
+| --- | --- | --- | --- | --- |
+| Diffusion Policy | 20.0 (0.60) | 26.7 (0.80) | 26.7 (0.67) | 24.4 (0.69) |
+| OpenVLA | 13.3 (0.93) | 20.0 (0.73) | 26.7 (1.27) | 20.0 (0.98) |
+| LAPA | 26.7 (1.60) | 6.7 (0.60) | 53.3 (1.87) | 28.9 (1.36) |
+| UniVLA | 66.7 (2.33) | 53.3 (2.40) | 86.7 (2.73) | 68.9 (2.49) |
+
+（论文 Table II，成功率 %，括号内为分步得分，满分 3。）
+
+- 原设定下 UniVLA 的成功率是 93.3：新物体只降 6.6，光照降 26.6，**视觉干扰物降 40.0，降幅最大**。
+- 作者也承认，越依赖语义的策略（LAPA、UniVLA）遇到干扰物掉得越明显；LAPA 从原设定的 60.0 跌到 6.7。
+- 也就是说，task-centric 潜动作在预训练的标签层面去掉了干扰，但没有解决“场景里多了无关物体”时策略本身的鲁棒性，干扰问题在策略端仍然存在。
+
+</Detail>
+
+<Pitfall title="标签去干扰不等于策略抗干扰">
+
+TC 潜动作是在预训练标签这一层去掉干扰。真机泛化测试里，桌上多放几个无关物体，UniVLA 的成功率从 93.3 掉到 53.3，是三种扰动里降得最多的。
+
+</Pitfall>
+
+</Step>
+
+<Step id="step-7" n={7} title="LAM 的证据与消融" gist="最有力的证据是 Table III：只用 Ego4D 预训练时，用 TC 当标签比用 Genie 式的“全部变化”高 6.4，提升集中在 Goal 和 Long；TI 当标签在 Long 上几乎为 0。其余证据多为定性展示。">
+
+<KeyPoint>
+
+| 标签（只用 Ego4D 预训练） | Spatial | Object | Goal | Long | 平均 |
+| --- | --- | --- | --- | --- | --- |
+| Genie（全部变化） | 89.8 | 92.8 | 77.2 | 69.6 | 82.3 |
+| Task-irrelevant | 68.0 | 90.4 | 67.2 | 0.2 | 56.5 |
+| Task-centric | 91.2 | 94.2 | 90.2 | 79.4 | 88.7 |
+
+TC 相对 Genie 的提升集中在 Goal（+13.0）和 Long（+9.8）。
+
+</KeyPoint>
+
+<Detail>
+
+### Table III：三种潜动作当标签
+
+论文选只用 Ego4D 预训练的设定，因为人类视频里任务无关的运动最多，最能放大差别。
+
+- **提升集中在 Goal 和 Long**：Goal 套件的场景相同、只有指令不同，最依赖“标签贴近意图”；Spatial、Object 已经接近饱和。
+- **TI 在 Long 上只有 0.2**：TI 按定义是“$O_t$ 加 $\ell$ 预测不出来的变化”，而策略的输入恰好就是 $o_t$ 和 $\ell$，这样的标签对策略来说不可预测。
+- **TI 在 Object 上仍有 90.4**：说明 TI 里混有动作信息，并不是纯干扰，和<Ref to="step-3">第 3 步</Ref>说的“TI 并不纯”一致。
+- **没有证明的**：TC 不含干扰、TI 只有干扰；提升来自解耦本身（Genie 基线是在像素空间还是 DINO 空间、码本多大，都没交代）；Table III 是否跑了多个种子。
+
+### 定性证据
+
+<PaperFigure src="images/univla/fig8.webp" alt="论文图 8：来自 Bridge、RT-1、LIBERO、Ego4D、GNM、DobbE 的帧对，按相同潜动作分组：拿起、放下、前进" caption="论文图 8：被打上同一个潜动作的帧对，来自不同数据源和具身形态。Group A 是拿起东西，Group B 是放下东西，Group C 是向前移动（导航数据和腕部相机视角）。" />
+
+<PaperFigTabs label="论文图 A-1 和 A-2 的视图" tabs={[
+  { value: 'more', label: '更多分组（图 A-1）', src: 'images/univla/figA1.webp', maxWidth: '36rem', alt: '论文图 A-1：更多按相同潜动作分组的帧对：向上移动、向下移动物体、向下移动', caption: '论文图 A-1：更多分组。Group D 是把东西往上移，Group E 是把东西往下移，Group F 是向下移动。' },
+  { value: 'attn', label: '注意力热图（图 A-2）', src: 'images/univla/figA2.webp', maxWidth: '30rem', alt: '论文图 A-2：task-centric 潜动作对图像 patch 的注意力热图', caption: '论文图 A-2：task-centric 潜动作对图像 patch 的注意力热图，集中在夹爪和被操作的物体上。' },
+]} />
+
+- **论文图 8 / A-1**：同一个 TC 潜动作在 Bridge、RT-1、LIBERO、Ego4D 上对应语义一致的动作（拿起、放下、前进）。这些都是挑选的例子，没有定量指标；“同一个潜动作”是 4 个 token 全部相同还是部分相同，也没有说明。
+- **论文图 A-2**：TC 潜动作对 patch 的注意力集中在夹爪和被操作物体上。但缺少 TI 或 Genie 的对照图，不能单独说明解耦成功。
+
+### 其他消融
+
+| 消融 | 结果 |
+| --- | --- |
+| 解码器（Table IV） | 自回归离散 bin 73.6 → 不用视觉 query 92.5 → 完整 95.2；LIBERO-Long 49.0 → 92.0 |
+| 历史潜动作（Table V） | LIBERO-Long 88.1 → 92.0；R2R 30.6 → 47.1 |
+| 数据规模（论文图 9） | 真机得分 Bridge 2.05 → 加 OpenX 2.35 → 再加人类视频 2.64；LIBERO 已饱和 |
+| 数据效率（论文图 10） | 只用 10% 的 LIBERO-Goal 数据就有 86.3，已超过用全量数据的 OpenVLA（79.2） |
+
+<PaperFigure src="images/univla/fig9.webp" maxWidth="26rem" alt="论文图 9：数据规模的雷达图，三个轴是真机、LIBERO、R2R" caption="论文图 9：预训练数据从 Bridge v2 扩到 OpenX（操作 + 导航），再加人类视频。真机得分 2.05 → 2.35 → 2.64，R2R 38 → 44 → 49，LIBERO 92.5 → 94.2 → 95.2。" />
+
+<PaperFigure src="images/univla/fig10.webp" alt="论文图 10：LIBERO-Goal 和 LIBERO-Long 上不同训练数据比例下的成功率" caption="论文图 10：用 10%、20%、50% 和全部的下游示范数据微调。LIBERO-Goal 上 UniVLA 为 86.3、90.4、93.1、95.6，LIBERO-Long 上为 62.4、71.4、87.0、92.0；虚线是此前的最好结果。" />
+
+数据规模的增益在 LIBERO 上已经看不太出来（92.5 → 95.2），持续的增益主要出现在真机和 R2R 上。
+
+</Detail>
+
+</Step>

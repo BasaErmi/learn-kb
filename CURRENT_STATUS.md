@@ -1,9 +1,9 @@
 # 当前状态
 
-最后更新：2026-11-19
+最后更新：2026-11-24
 
 ## 进行中
-- 新增《LAPA》专题（论文带读类，前置 LAPO），等待 Guanlin 阅读反馈；《LAPO》已发布。
+- 新增《UniVLA》专题（论文带读类，前置 LAPA），等待 Guanlin 阅读反馈；《LAPO》《LAPA》已发布。
 - 《交叉熵》专题等待 Guanlin 阅读反馈。已发布 Softmax、CFG、LDM 三个专题：https://basaermi.github.io/learn-kb/
 - 知识库已按“领域树 + 标签 + 前置关系”组织（ADR-003）
 

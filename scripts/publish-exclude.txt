@@ -13,3 +13,4 @@ CrossEntropy/
 LAPO/
 LAPA/
 UniVLA/
+VQ-VAE/

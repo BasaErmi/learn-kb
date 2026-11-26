@@ -1,5 +1,17 @@
 # 变更日志
 
+## [2026-11-26] - Changed
+- VQ-VAE 第 3 步：STE 前向 / 反向图重画，前向和反向按列对齐，反向在量化处分成“链式法则乘 0”和“STE 乘 $I$”两路；新增交互演示“把量化误差看成噪声”，对比直线梯度 $\mathcal{L}'(z_e)$ 与 STE 梯度 $\mathcal{L}'(z_q)$，并画出 $\varepsilon(z_e)$ 的锯齿，码字越密两者越接近。
+- VQ-VAE 第 3 步的 STE 演示重做：链式法则和 STE 两条道从同一起点并排走，每条道画出反向用的斜率（0 对比 1）、这一步的梯度计算和 $z_e$ 的去向；正文在演示前补一句说明要看什么。
+- 修复 VQ-VAE 两个演示：STE 演示收敛后停止计步；码本损失与 commitment 演示加入代替重建损失的锚定项，$z_e$ 不再被 commitment 一路拉到码字上。
+
+## [2026-11-26] - Added
+- 新专题《VQ-VAE：离散潜变量的自编码器》（`vq-vae`，新子领域“生成模型 › 自编码器与离散表示”，标签：向量量化、图像生成、信息论）。概念类版式，在学习笔记基础上精简，共 7 步：为什么要离散潜变量 → 码本与最近邻量化 → STE → 损失函数的三项 → KL 项去哪了 → 学习先验并生成 → 死码字与 EMA，附公式速查、易错点、自测卡片。
+  - 8 张 SVG：AE / VAE / VQ-VAE 结构对比、先验空洞（示意）、逐位置量化成索引网格、STE 的前向与反向、三项损失的梯度去向、两阶段训练与生成、死码字（示意）、后续发展脉络。
+  - 3 个交互演示（数值由 `lib/vq.ts` 计算并有单元测试）：拖动 $z_e$ 看 Voronoi 量化、一维 STE 逐步走（对比真实梯度）、码本损失与 commitment 逐步拉动（含死码字）。
+  - 笔记第 7 步只细讲死码字和 EMA，VQ-VAE-2、VQGAN、LDM、LAPA 压成一节，链到 LDM 的 VQ-reg 和 LAPA 第 2 步；第 6 步链到交叉熵专题。LAPO 的前置专题加上 VQ-VAE。
+  - 相关文件：`src/topics/vq-vae/`、`tests/e2e/vq-vae.spec.ts`、`src/topics/taxonomy.ts`、`src/topics/registry.ts`、`src/topics/lapo/meta.ts`、`src/styles/demo.css`、`scripts/publish-exclude.txt`。
+
 ## [2026-11-24] - Changed
 - UniVLA 第 2 步的 LAM 图改为可在 Stage 1 / Stage 2 之间切换：骨架相同，Stage 1 编码器多拼语言 $\ell$，Stage 2 换成 $a_{TC}$ 并画出冻结的 $\mathrm{VQ}_{TI}$ 和新的 $\mathrm{VQ}_{TC}$。原图画的是论文里不存在的不带语言的 LAM。`DiagramFigure` 新增 `controls` 插槽。相关文件：`src/topics/univla/demos/LAMFigure.tsx`、`src/kb/components/Diagram.tsx`、`src/styles/demo.css`。
 

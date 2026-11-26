@@ -150,3 +150,18 @@
 .kb-umap-group > span { font-family: var(--sans); font-size: 0.74rem; color: var(--ink-3); width: 5.4rem; flex: none; }
 .kb-umap .kb-strip img { padding: 0; border: 0; background: #000; }
 .kb-figure img.kb-umap-legend { display: block; max-width: 26rem; margin: 0.6rem auto 0; padding: 0; border: 0; }
+
+/* VQ-VAE：二维码本平面 */
+.kb-vq-plane { touch-action: none; cursor: crosshair; border: 1px solid var(--rule); background: var(--card); }
+.kb-vq-plane.is-static { cursor: default; }
+.kb-vq-plane .kb-vq-label { font-size: 3.4px; fill: var(--ink-2); font-family: var(--sans); pointer-events: none; }
+.kb-vq-handle { fill: var(--ink); stroke: var(--card); stroke-width: 0.8; cursor: grab; outline: none; }
+.kb-vq-handle:focus-visible { stroke: var(--accent); stroke-width: 1.2; }
+.kb-num-table tr.is-hit td { font-weight: 600; color: var(--ink); }
+.kb-ste-lane { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0.4rem 1.2rem; align-items: center; padding: 0.7rem 0; border-bottom: 1px solid var(--rule); }
+.kb-ste-lane:last-of-type { border-bottom: 0; }
+.kb-ste-name { grid-column: 1 / -1; font-family: var(--sans); font-weight: 600; font-size: 0.85rem; color: var(--ink); }
+.kb-ste-lane.is-ste .kb-ste-name { color: var(--accent); }
+.kb-ste-calc p { margin: 0.25rem 0; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.kb-ste-calc .kb-ste-status { font-family: var(--sans); font-weight: 600; font-size: 0.82rem; margin-top: 0.5rem; }
+@media (max-width: 760px) { .kb-ste-lane { grid-template-columns: 1fr; } }

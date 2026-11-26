@@ -15,7 +15,7 @@ export const areas: Area[] = [
   {
     id: 'generative',
     title: '生成模型',
-    subs: [{ id: 'diffusion', title: '扩散模型' }],
+    subs: [{ id: 'autoencoder', title: '自编码器与离散表示' }, { id: 'diffusion', title: '扩散模型' }],
   },
   {
     id: 'embodied',

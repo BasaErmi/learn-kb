@@ -6,6 +6,7 @@ import { meta as ldmMeta } from './ldm/meta'
 import { meta as lapoMeta } from './lapo/meta'
 import { meta as lapaMeta } from './lapa/meta'
 import { meta as univlaMeta } from './univla/meta'
+import { meta as vqvaeMeta } from './vq-vae/meta'
 
 export interface TopicStep { id: string; title: string }
 export interface TopicMeta {
@@ -34,6 +35,7 @@ export const topics: Topic[] = [
   { ...lapoMeta, load: () => import('./lapo/index.mdx') },
   { ...lapaMeta, load: () => import('./lapa/index.mdx') },
   { ...univlaMeta, load: () => import('./univla/index.mdx') },
+  { ...vqvaeMeta, load: () => import('./vq-vae/index.mdx') },
 ]
 
 export function findTopic(slug: string): Topic | undefined {

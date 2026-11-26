@@ -1,0 +1,724 @@
+import { QuantizeDemo } from './demos/QuantizeDemo'
+import { SteDemo } from './demos/SteDemo'
+import { PullDemo } from './demos/PullDemo'
+import { NoiseDemo } from './demos/NoiseDemo'
+import { AEFamilyFigure, PriorHoleFigure, GridFigure, SteGraphFigure, GradFlowFigure, TwoStageFigure, DeadCodeFigure, LineageFigure } from './demos/Figures'
+
+<section id="overview" className="kb-section">
+
+## 总览与记号
+
+<KeyPoint>
+
+$$
+z_q(x) = e_k,\quad k = \arg\min_j \|z_e(x) - e_j\|_2
+$$
+
+$$
+\mathcal{L} = -\log p\big(x \mid z_q(x)\big) + \big\|\mathrm{sg}[z_e(x)] - e_k\big\|_2^2 + \beta\,\big\|z_e(x) - \mathrm{sg}[e_k]\big\|_2^2
+$$
+
+VQ-VAE 把编码器输出逐位置换成共享码本里最近的码字，图像就变成一张离散的索引网格。量化不可导，用 STE 让梯度穿过去；码本靠第二项学，第三项让编码器别乱跑。均匀先验下 KL 是常数，所以训练时没有 KL 项；要生成，就在索引网格上再训一个自回归先验（van den Oord et al.，2017）。
+
+</KeyPoint>
+
+VAE 的潜变量是连续的高斯，训练时用 KL 把它拉向固定的先验。这带来两个毛病：强解码器会让潜变量“躺平”，固定先验和真实编码的分布对不上。VQ-VAE 换了一条路：潜变量做成离散的编号，先验不事先固定，等编码器训练好之后再去学。剩下的问题都是“离散”带来的：量化不可导怎么传梯度、码本怎么学、KL 去哪了、怎么生成。
+
+<Roadmap legend={{ goal: '动机', basis: '训练', core: '生成与实践' }} nodes={[
+  { id: 'step-1', label: '为什么离散', sub: 'VAE 的三个痛点', kind: 'goal' },
+  { id: 'step-2', label: '码本与量化', sub: '最近邻，图像变网格', kind: 'basis' },
+  { id: 'step-3', label: 'STE', sub: '梯度穿过量化', kind: 'basis' },
+  { id: 'step-4', label: '三项损失', sub: '码本像在线 k-means', kind: 'basis' },
+  { id: 'step-5', label: 'KL 去哪了', sub: '常数，硬瓶颈', kind: 'basis' },
+  { id: 'step-6', label: '学先验并生成', sub: '索引网格上的自回归', kind: 'core' },
+  { id: 'step-7', label: '死码字与 EMA', sub: '码本怎么学得好', kind: 'core' },
+]} />
+
+<Notation>
+
+| 记号 | 含义 |
+| --- | --- |
+| $z_e(x)$ | 编码器输出，量化之前的连续向量；图像上是 $H' \times W' \times D$ 的特征图 |
+| $e_1, \dots, e_K$ | 码本里的 $K$ 个码字，每个是 $D$ 维向量；码本是一个 $K \times D$ 的可学习矩阵 |
+| $k$ | 最近码字的编号，$k = \arg\min_j \Vert z_e(x) - e_j\Vert _2$ |
+| $z_q(x)$ | 量化后的向量，$z_q(x) = e_k$，送进解码器 |
+| $z$ | 离散潜变量本身，即编号组成的索引网格，共 $N = H' \times W'$ 个位置 |
+| $\varepsilon$ | 量化误差，$\varepsilon = e_k - z_e(x)$ |
+| $\mathrm{sg}[\cdot]$ | stop-gradient：前向是恒等，反向梯度为 0，代码里是 `.detach()` |
+| $\beta$ | commitment 损失的权重，论文取 0.25 |
+| $p_\psi(z)$ | 第二阶段学的先验模型，论文里图像用 PixelCNN |
+
+</Notation>
+
+</section>
+
+<Step id="step-1" n={1} title="为什么要离散潜变量" gist="VAE 用 KL 对潜变量的信息量收税，强解码器下编码器会躺平；固定的高斯先验又和真实编码对不上。VQ-VAE 把潜变量做成离散编号，先验等训练完再学。">
+
+<KeyPoint>
+
+$$
+\mathbb{E}_{x}\Big[D_{\text{KL}}\big(q_\phi(z \mid x)\,\|\,p(z)\big)\Big] = I_q(x; z) + D_{\text{KL}}\big(q(z)\,\|\,p(z)\big)
+$$
+
+VAE 的 KL 项在对 $z$ 携带的信息“收税”：$z$ 每多带 1 nat 信息，就至少多付 1 nat 的 KL。VQ-VAE 针对 VAE 的三个痛点：**后验坍塌**、**固定先验和真实编码对不上（先验空洞）**、**很多数据本来就是离散的**。
+
+</KeyPoint>
+
+<Detail>
+
+<AEFamilyFigure />
+
+### 后验坍塌：KL 在对信息量收税
+
+VAE 的目标是 ELBO：
+
+$$
+\mathcal{L}_{\text{VAE}} = \mathbb{E}_{q_\phi(z \mid x)}\big[\log p_\theta(x \mid z)\big] - D_{\text{KL}}\big(q_\phi(z \mid x)\,\|\,p(z)\big)
+$$
+
+两项在拉扯：重建项希望 $z$ 带上 $x$ 的信息，KL 项希望 $q_\phi(z \mid x) = p(z)$，也就是 $z$ 与 $x$ 无关。把 KL 对数据取平均：
+
+$$
+\mathbb{E}_{x}\Big[D_{\text{KL}}\big(q_\phi(z \mid x)\,\|\,p(z)\big)\Big] = I_q(x; z) + D_{\text{KL}}\big(q(z)\,\|\,p(z)\big)
+$$
+
+第一项是互信息，第二项非负。所以 $z$ 每多带 1 nat，就要多付至少 1 nat。如果这些信息带来的重建收益抵不上成本，最优解就是 $q_\phi(z \mid x) = p(z)$，KL 为 0，编码器“躺平”。
+
+什么时候收益抵不上成本？当解码器自己就能把 $x$ 建模好的时候。自回归解码器训练时用 teacher forcing，每一步都看得到真实前缀：
+
+$$
+\log p_\theta(x \mid z) = \sum_{i=1}^{n} \log p_\theta(x_i \mid x_{<i}, z)
+$$
+
+“这是哪个样本”的信息已经通过 $x_{<i}$ 泄露给了解码器，$z$ 只能帮上开头几步。更严格地说，$\text{ELBO}(x) = \log p_\theta(x) - D_{\text{KL}}\big(q_\phi(z \mid x)\,\|\,p_\theta(z \mid x)\big)$，自回归模型不用 $z$ 就能拟合数据，引入 $z$ 只会多出一个非负的差距。
+
+普通 VAE 的解码器是因子化的，$p_\theta(x \mid z) = \prod_i p_\theta(x_i \mid z)$，去掉 $z$ 只能输出平均图，所以不会完全坍塌，但常有部分维度失效、细节丢失。
+
+### 先验空洞：固定先验和真实编码对不上
+
+聚合后验 $q(z) = \mathbb{E}_{x \sim p_{\text{data}}}[q_\phi(z \mid x)]$ 通常不等于 $\mathcal{N}(0, I)$。先验认为概率高、解码器却没见过的区域就是“空洞”，从那里采样只会得到模糊或怪异的图。
+
+<PriorHoleFigure />
+
+VQ-VAE 的思路是把方向反过来：**先验不事先固定，编码器训练好之后，再去拟合真实编码的分布**（<Ref to="step-6">第 6 步</Ref>）。
+
+### 很多数据本来就是离散的
+
+语言是 token，语音可以看作音素序列。更重要的是，离散序列有成熟的建模工具：softmax 加交叉熵加自回归模型。把图像也变成离散 token，就能直接用上这一整套。
+
+| | AE | VAE | VQ-VAE |
+| --- | --- | --- | --- |
+| 潜变量 | 连续、确定 | 连续、高斯 | 离散（码本编号） |
+| 先验 | 无 | 固定 $\mathcal{N}(0, I)$ | 训练完再学 |
+| 能否生成 | 不能 | 能，容易模糊 | 能（两阶段） |
+
+</Detail>
+
+<Pitfall title="后验坍塌和解码器强弱有关">
+
+判断标准是解码器能不能自己建模 $x$ 各维之间的依赖。自回归、flow 这类强解码器可能完全坍塌；普通 VAE 的因子化解码器只会部分维度失效，不会完全不用 $z$。
+
+</Pitfall>
+
+<Quiz>
+
+为什么说 VAE 的 KL 项是在对 $z$ 的信息量“收税”？
+
+<Answer>
+
+对数据取平均后，$\mathbb{E}_x[D_{\text{KL}}(q_\phi(z \mid x)\,\|\,p(z))] = I_q(x; z) + D_{\text{KL}}(q(z)\,\|\,p(z))$。第一项就是 $z$ 携带的关于 $x$ 的信息，第二项非负，所以 $z$ 每多带 1 nat 信息，KL 至少多 1 nat。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<Step id="step-2" n={2} title="码本与最近邻量化" gist="编码器输出每个位置独立吸附到共享码本里最近的码字，图像变成一张整数索引网格；这一步就是 k-means 里的“分配”。">
+
+<KeyPoint>
+
+$$
+k = \arg\min_j \|z_e(x) - e_j\|_2, \qquad z_q(x) = e_k, \qquad q(z = k \mid x) = \begin{cases} 1 & k = \arg\min_j \|z_e(x) - e_j\|_2 \\ 0 & \text{otherwise} \end{cases}
+$$
+
+码字是聚类中心，量化是把点分给最近的中心，空间被划成 $K$ 个 Voronoi 区域。后验是确定的 one-hot。单个编号只有 $\log_2 K$ bit，所以编码器输出一张特征图，**每个位置独立量化**。
+
+</KeyPoint>
+
+<Detail>
+
+### 结构
+
+$$
+x \;\xrightarrow{\text{编码器}}\; z_e(x) \;\xrightarrow{\text{量化}}\; z_q(x) \;\xrightarrow{\text{解码器}}\; \hat{x}
+$$
+
+- **编码器**：输出连续向量 $z_e(x)$，是确定的，没有采样。
+- **码本**：一张可学习的表 $\{e_1, \dots, e_K\}$，$e_j \in \mathbb{R}^D$，即一个 $K \times D$ 矩阵。
+- **解码器**：以 $z_q(x)$ 为输入重建 $x$。
+
+量化和 k-means 的分配步骤完全一样，区别只在于这里的“点”由编码器产生，会随训练移动。
+
+<QuantizeDemo />
+
+### 网格：每个位置独立量化
+
+单个编号只有 $\log_2 K$ bit，$K = 512$ 时才 9 bit，远远不够描述一张图。所以编码器输出空间特征图 $z_e(x) \in \mathbb{R}^{H' \times W' \times D}$，每个位置独立量化，得到 $H' \times W'$ 的整数网格。
+
+<GridFigure />
+
+论文的 ImageNet 设置是 $128 \times 128 \times 3 \to 32 \times 32$，$K = 512$，压缩比
+
+$$
+\frac{128 \times 128 \times 3 \times 8}{32 \times 32 \times 9} = \frac{393216}{9216} \approx 42.7
+$$
+
+一张图变成 1024 个“视觉 token”。
+
+**所有位置、所有图片共用一个码本**：同样的局部模式可能出现在任何位置，应该用同一个码字表示，和卷积共享权重是一个道理；位置信息由网格坐标提供，码字只描述“这里是什么”。共用码本也让它像一张词表，后面的先验模型才能学 token 之间的搭配规律。
+
+<Aside title="索引网格和 one-hot">
+
+存储上索引网格是 `(B, H, W)` 的整数张量，概念上等价于 one-hot。查表在数学上就是 one-hot 乘矩阵：$\text{onehot}(k)^\top E = E[k]$。送进解码器时查码本；送进先验模型时查先验模型自己的 embedding 表，两张表互不相干。
+
+</Aside>
+
+</Detail>
+
+<Pitfall title="码字不是贴图块">
+
+码字是交给 CNN 解码器的特征向量，不是直接拼起来的图块。解码器卷积的感受野互相重叠，同一个码字在不同上下文里会被渲染得不同，所以离散网格解码出来没有 JPEG 那样的块边界。
+
+</Pitfall>
+
+<Quiz>
+
+$K = 512$、网格 $32 \times 32$ 时，一张图的潜变量最多能携带多少 bit 信息？
+
+<Answer>
+
+每个位置 $\log_2 512 = 9$ bit，共 $32 \times 32 = 1024$ 个位置，最多 $1024 \times 9 = 9216$ bit。原图 $128 \times 128 \times 3 \times 8 = 393216$ bit，压缩约 42.7 倍。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<Step id="step-3" n={3} title="Straight-Through Estimator" gist="量化是阶梯函数，导数处处为 0，编码器收不到梯度；STE 前向走阶梯、反向假装走斜线，把解码器对 $z_q$ 的梯度原样交给 $z_e$。">
+
+<KeyPoint>
+
+$$
+z_{q,\text{st}} = z_e + \mathrm{sg}\big[z_q - z_e\big] \qquad\Longrightarrow\qquad \nabla_{z_e}\mathcal{L} := \nabla_{z_q}\mathcal{L}
+$$
+
+前向值等于 $z_q$，反向时把 $\partial z_q / \partial z_e$ 当作单位矩阵。等价的看法：把量化误差 $\varepsilon = e_k - z_e$ 当成与编码器无关的外部噪声，网络就成了“中间加噪声的普通 AE”。梯度的作用不是调离散输出，而是**引导 $z_e$ 换区域**。
+
+</KeyPoint>
+
+<Detail>
+
+### 问题：阶梯函数没有梯度
+
+以一维码本 $\{0, 1, 2\}$ 为例：$z_e < 0.5$ 时 $z_q = 0$，$0.5 \le z_e < 1.5$ 时 $z_q = 1$，$z_e \ge 1.5$ 时 $z_q = 2$。每一段都是平的，所以
+
+$$
+\frac{\partial \mathcal{L}}{\partial z_e} = \frac{\partial \mathcal{L}}{\partial z_q} \cdot \underbrace{\frac{dz_q}{dz_e}}_{=\,0} = 0
+$$
+
+编码器收不到任何梯度。
+
+### STE：前向走阶梯，反向假装走斜线
+
+<SteGraphFigure />
+
+- **前向**：$z_q = e_k$，硬量化。
+- **反向**：$\nabla_{z_e}\mathcal{L} := \nabla_{z_q}\mathcal{L}$，即假装 $\partial z_q / \partial z_e = I$，相当于斜线 $z_q = z_e$ 的导数。
+
+写成 $z_{q,\text{st}} = z_e + \mathrm{sg}[z_q - z_e]$。代入 $z_e = 0.8$、$z_q = 1$：前向是 $0.8 + 0.2 = 1.0$；反向时 $0.2$ 是常数，对 $z_e$ 的导数为 1。
+
+这个“假装”换来了什么？看一个一维例子：码本 $\{0, 1, 2\}$，编码器输出 $z_e = 0.8$ 被量化成 1，而解码器想要的是 2。下面让链式法则和 STE 从同一个起点出发，各走几步。
+
+<SteDemo />
+
+链式法则下 $z_e$ 永远不动；STE 下 $z_e$ 被一路推着走（0.8 → 1.3 → 1.8），越过边界 1.5 后换成了解码器想要的码字，梯度变成 0，停下。**STE 的梯度不是在连续地调 $z_q$，而是引导 $z_e$ 换区域。**
+
+### 为什么可以这样近似：把量化误差当外部噪声
+
+把量化写成加一个偏移：
+
+$$
+z_q = z_e + \varepsilon, \qquad \varepsilon = e_k - z_e
+$$
+
+STE 的写法字面上就是**把 $\varepsilon$ 当作与编码器无关的常数**。在这个设定下，网络是“中间加噪声的普通 AE”，STE 给出的梯度是精确的。唯一被忽略的是 $\varepsilon$ 其实依赖 $z_e$：在同一个区域里 $z_e$ 往哪边移，$\varepsilon$ 就往反方向抵消，这正是真实梯度为 0 的原因。
+
+那 STE 和“理想梯度”差在哪？设想量化不存在、$z_q = z_e$ 走的是一条直线，编码器应该收到解码器在 $z_e$ 处的梯度，记作**直线梯度**；STE 交给它的却是解码器在 $z_q = z_e + \varepsilon$ 处的梯度。两者唯一的区别是求导的位置被噪声 $\varepsilon$ 推开了一段。如果解码器的梯度满足 Lipschitz 条件，
+
+$$
+\Big\| \nabla_z \mathcal{L}\big|_{z_q} - \nabla_z \mathcal{L}\big|_{z_e} \Big\| \le \beta_{\text{Lip}} \, \|\varepsilon\|
+$$
+
+那么只要**解码器平滑**、**量化误差小**，编码器收到的信号就接近普通 AE。STE 是启发式的、有偏的；第二个条件不会自己成立，要靠<Ref to="step-4">第 4 步</Ref>的损失来保证。
+
+<NoiseDemo />
+
+码字越密，$\varepsilon$ 越小，两条切线越接近：码字间距从 1 缩到 0.5、0.25，平均差从 0.667 降到 0.368、0.179。码字放在哪里由码本决定，编码器输出离码字多远则由<Ref to="step-4">第 4 步</Ref>的 commitment 约束。
+
+<Aside title="为什么不用 softmax 松弛">
+
+另一种思路是把硬量化换成按距离的 softmax 加权平均，成熟版本是 Gumbel-Softmax（DALL-E 第一代的 dVAE 用的就是它）。代价是训练时不是真正的离散，训练和测试不一致，温度难调，计算量也大。
+
+</Aside>
+
+</Detail>
+
+<Pitfall title="STE 不更新码本">
+
+STE 里码字 $e_k$ 只出现在 $\mathrm{sg}$ 里，重建损失的梯度只到达解码器和（经 STE）编码器，**码本一点梯度也收不到**。码本怎么学，是下一步要解决的问题。
+
+</Pitfall>
+
+<Quiz>
+
+码本 $\{0, 1, 2\}$，$\mathcal{L} = (z_q - 2)^2$，学习率 0.25，$z_e = 0.8$。用 STE 走一步后 $z_e$ 是多少？用真实梯度呢？
+
+<Answer>
+
+$z_q = 1$，$\partial\mathcal{L}/\partial z_q = 2(1 - 2) = -2$。STE 把 $-2$ 原样交给 $z_e$，更新后 $0.8 - 0.25 \times (-2) = 1.3$。真实梯度是 $-2 \times 0 = 0$，$z_e$ 仍是 0.8。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<Step id="step-4" n={4} title="损失函数的三项" gist="重建项训解码器和编码器；码本损失只动码字、把它拉向编码器输出的均值，相当于在线 k-means；commitment 只动编码器、让输出别乱跑，权重 β = 0.25。">
+
+<KeyPoint>
+
+$$
+\mathcal{L} = \underbrace{-\log p\big(x \mid z_q(x)\big)}_{\text{① 重建}} + \underbrace{\big\| \mathrm{sg}[z_e(x)] - e_k \big\|_2^2}_{\text{② 码本损失}} + \underbrace{\beta \, \big\| z_e(x) - \mathrm{sg}[e_k] \big\|_2^2}_{\text{③ commitment}}
+$$
+
+① 更新解码器和（经 STE）编码器；② 只更新码字，最优解是分给它的 $z_e$ 的均值；③ 只更新编码器，把 $z_e$ 拉向选中的码字。**主要让码本适应编码器，编码器只轻微靠拢。**
+
+</KeyPoint>
+
+<Detail>
+
+<GradFlowFigure />
+
+### 重建项
+
+高斯解码器下就是 MSE。它更新解码器，并经 STE 更新编码器，但不更新码本。论文原文把这一项写成 $\log p$，不带负号，是在最大化。
+
+### 码本损失：码字追编码器
+
+$\mathrm{sg}$ 挡住了编码器，只有码字收到梯度：
+
+$$
+\frac{\partial}{\partial e_k} \|\mathrm{sg}[z_e] - e_k\|^2 = 2\,(e_k - z_e)
+$$
+
+对分给 $k$ 的所有 $z_e$ 求和，最优解是它们的均值：
+
+$$
+e_k^* = \frac{1}{n_k} \sum_{i=1}^{n_k} z_e^{(i)}
+$$
+
+这正是 k-means 的中心更新。量化是“分配”，码本损失是“更新中心”，合起来 VQ-VAE 是在**在线地对编码器输出做 k-means**。
+
+### commitment 损失：编码器别乱跑
+
+码本损失只管码字追上来，编码器那一侧没有约束：编码器输出的尺度可以任意漂移，码字追不上，$\|\varepsilon\|$ 变大，STE 的近似就失效了。commitment 对码字停梯度，只把 $z_e$ 拉向选中的码字。论文取 $\beta = 0.25$，在 0.1 到 2.0 之间结果都比较稳健。
+
+### 为什么拆成两项
+
+写成一项 $\|z_e - e_k\|^2$ 会以同样的力度同时推动两边。拆开以后可以分别定权重：
+
+| | 谁动 | 往哪动 | 权重 |
+| --- | --- | --- | --- |
+| ② | 码字 $e_k$ | 向 $z_e$ | 1 |
+| ③ | 编码器输出 $z_e$ | 向 $e_k$ | $\beta = 0.25$ |
+
+意图是码本去适应编码器，编码器只轻微靠拢，不为了贴近码字而牺牲重建。
+
+<PullDemo />
+
+三处 $\mathrm{sg}$ 各管一件事：② 冻住编码器，③ 冻住码本，STE 把量化误差当常数。
+
+</Detail>
+
+<Pitfall title="三项损失各管各的">
+
+| 组件 | ① 重建 | ② 码本 | ③ commitment |
+| --- | --- | --- | --- |
+| 解码器 | ✓ | | |
+| 编码器 | ✓（经 STE） | | ✓ |
+| 码本 | | ✓ | |
+
+码本只从 ② 得到梯度；编码器从 ① 和 ③ 得到梯度。
+
+</Pitfall>
+
+<Quiz>
+
+只保留 ① 和 ②、去掉 commitment，会出什么问题？
+
+<Answer>
+
+编码器输出没有尺度约束，可以随重建任意漂移，码字靠 ② 一步步追，追不上时量化误差 $\|\varepsilon\|$ 变大，STE 依赖的“量化误差小”不再成立，编码器收到的梯度越来越偏。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<Step id="step-5" n={5} title="KL 项去哪了" gist="后验是 one-hot、训练时先验取均匀，KL 恒为 $N \log K$，与参数无关，所以丢掉；ELBO 只剩重建项。KL 成了固定费用，不会后验坍塌，信息量由 $N$ 和 $K$ 硬性限制。">
+
+<KeyPoint>
+
+$$
+D_{\text{KL}}\big(q(z \mid x)\,\|\,p(z)\big) = N \log K, \qquad \log p(x) \ge \log p\big(x \mid z_q(x)\big) - N \log K, \qquad I(x; z) \le N \log_2 K\ \text{bit}
+$$
+
+均匀先验下最大化 ELBO 等价于最小化重建损失；码本损失和 commitment 不来自 ELBO，是让 STE 和码本学习能工作的辅助项。
+
+</KeyPoint>
+
+<Detail>
+
+### KL 是常数
+
+后验是 one-hot，第一阶段先验取均匀 $p(z = k) = 1/K$，一个位置的 KL 是
+
+$$
+D_{\text{KL}} = \sum_{k} q(k \mid x) \log \frac{q(k \mid x)}{p(k)} = 1 \cdot \log \frac{1}{1/K} = \log K
+$$
+
+$N = H' \times W'$ 个位置合计 $N \log K$，与参数无关，梯度为 0，训练时丢掉。ELBO 于是只剩重建项：
+
+$$
+\log p(x) \;\ge\; \log p\big(x \mid z_q(x)\big) - N \log K
+$$
+
+### 为什么不会后验坍塌
+
+KL 恒为 $N \log K$，相当于一笔**固定费用**：$z$ 携带多少信息都不额外收税，编码器没有理由躺平。信息量改由结构上的硬瓶颈限制：
+
+$$
+I(x; z) \le N \log_2 K\ \text{bit}
+$$
+
+VAE 的瓶颈靠 KL 权重软调节；VQ-VAE 的瓶颈由 $N$ 和 $K$ 直接决定。
+
+### 它还算不算 VAE
+
+形式上算，它在最大化 ELBO；实质上更像“**带离散瓶颈的 AE，加一个事后学的先验**”：后验是确定的，没有重参数化；均匀先验在训练中不起作用，也不能用来生成，随机拼一张编号网格解码出来只是噪声。
+
+| | VAE | VQ-VAE |
+| --- | --- | --- |
+| 后验 | 高斯，随机 | one-hot，确定 |
+| 训练时的先验 | $\mathcal{N}(0, I)$，起正则作用 | 均匀，不起作用 |
+| KL | 要优化 | 常数，丢掉 |
+| 信息瓶颈 | 软（KL 权重） | 硬（$N$、$K$） |
+| 生成 | 从先验采样 | 先学先验 |
+
+回到<Ref to="step-1">第 1 步</Ref>的两个痛点：后验坍塌，因为 KL 是常数而消失；先验空洞，局部上码字跟着编码器输出走，解码器只见到训练时见过的码字，全局上真实编码在空间位置之间有很强的相关性，均匀先验本身就是一个巨大的空洞，要靠下一步学一个先验来解决。
+
+</Detail>
+
+<Pitfall title="②③ 不是 ELBO 的一部分">
+
+均匀先验下 ELBO 只剩重建项。码本损失和 commitment 是为了让 STE 和码本学习能工作才加的，不是从 KL 推出来的。
+
+</Pitfall>
+
+<Quiz>
+
+$K = 512$、$N = 32 \times 32$ 时，KL 是多少 nat？它对训练有什么影响？
+
+<Answer>
+
+$N \log K = 1024 \ln 512 \approx 6388$ nat。它与参数无关，梯度为 0，对训练没有任何影响，所以直接丢掉。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<Step id="step-6" n={6} title="学习先验并生成" gist="冻结编码器和码本，把训练集编码成索引网格，用自回归模型（交叉熵、最大似然）拟合这些网格的分布；生成时从先验采样编号，查码本、交给解码器。">
+
+<KeyPoint>
+
+$$
+p_\psi(z) = \prod_{i=1}^{N} p_\psi\big(z_i \mid z_{<i}\big), \qquad \mathcal{L}_{\text{prior}} = -\sum_{i=1}^{N} \log p_\psi\big(z_i \mid z_{<i}\big)
+$$
+
+$$
+\text{ELBO}(x) = \underbrace{\log p\big(x \mid z_q(x)\big)}_{\text{阶段一}} + \underbrace{\log p_\psi\big(z_q(x)\big)}_{\text{阶段二}}
+$$
+
+先验去拟合真实编码的分布，而不是用 KL 逼编码去贴先验；方向和 VAE 正好相反。两阶段训练就是对 ELBO 的两部分分别优化。
+
+</KeyPoint>
+
+<Detail>
+
+### 为什么需要这一步
+
+只做压缩和复原，阶段一就够了。这一步是为了**生成**：重建时手里有 $x$，$z$ 由编码器算出来；生成时没有 $x$，$z$ 从哪来？随便填一张网格等于从均匀先验采样，解码出来是噪声。需要一个“知道合理网格长什么样”的模型来产生 $z$，这就是先验模型。
+
+先验模型负责“构图”（每格放什么模式），解码器负责“上色和细节”。
+
+<TwoStageFigure />
+
+### 训练目标
+
+1. **冻结**阶段一的编码器和码本，同一张图每次编码的结果相同，先验的训练目标是固定的。
+2. 把训练集每张图编码成索引网格 $z^{(n)}$，通常预先编码好存下来。
+3. 在这些网格上做最大似然：
+
+$$
+\max_\psi \; \sum_{n} \log p_\psi\big(z^{(n)}\big) \quad\Longleftrightarrow\quad \min_\psi\; D_{\text{KL}}\big(q(z)\,\|\,p_\psi(z)\big)
+$$
+
+这里的 $q(z) = \mathbb{E}_{x \sim p_{\text{data}}}[q(z \mid x)]$ 是训练集编码网格的经验分布。后验是 one-hot 时 $D_{\text{KL}}(q(z \mid x)\,\|\,p_\psi(z)) = -\log p_\psi(z_q(x))$，代回 ELBO：
+
+$$
+\text{ELBO}(x) = \log p\big(x \mid z_q(x)\big) - D_{\text{KL}}\big(q(z \mid x)\,\|\,p_\psi(z)\big) = \log p\big(x \mid z_q(x)\big) + \log p_\psi\big(z_q(x)\big)
+$$
+
+第一项由阶段一优化，第二项由阶段二优化。
+
+注意区分：**码本**是阶段一学好的 $K \times D$ 表，只有一份，这一步不改它；**索引网格**每张图一个，先验学的是索引网格的分布。
+
+### 自回归分解：每一步是 $K$ 类分类
+
+按光栅顺序把网格展平成长度 $N$ 的序列，每个条件分布都是一个 $K$ 类分类，真实编号就是标签，损失就是<Ref topic="cross-entropy" to="step-3">交叉熵</Ref>。例如 $K = 3$、$2 \times 2$ 网格 $z^{(1)} = (2, 1, 3, 3)$：
+
+$$
+\log p_\psi\big(z^{(1)}\big) = \log p_\psi(2) + \log p_\psi(1 \mid 2) + \log p_\psi(3 \mid 2, 1) + \log p_\psi(3 \mid 2, 1, 3)
+$$
+
+各步概率若为 0.5、0.6、0.7、0.9，总和约为 $-1.67$。最大化就是把这些概率往 1 推。
+
+原论文的先验在图像上用 PixelCNN，在语音上用 WaveNet；后来的 VQGAN、DALL-E 用 Transformer，词表就是 $K$ 个码字。比起直接在像素上做自回归，序列短得多：$128 \times 128$ 的图有 49152 个像素值，索引网格只有 1024 个 token，每个 token 代表一块局部模式。
+
+### 生成
+
+1. 从先验逐个采样 $z_1, \dots, z_N$；
+2. 查码本，重排成 $H' \times W' \times D$；
+3. 解码器输出图像。
+
+生成时**不用编码器**。条件生成就是学 $p_\psi(z \mid y)$。采出来的网格落在真实编码所在的区域，而不是先验空洞里。
+
+<Aside title="离散为什么适合自回归">
+
+$K$ 类 softmax 能表示任意形状的分布，包括多峰；连续 token 如果假设高斯，多峰时只能输出平均值，结果就模糊了。
+
+</Aside>
+
+<Aside title="先验也用 teacher forcing，为什么不坍塌">
+
+先验不是 VAE 的解码器，它的任务本来就是无条件的密度建模，没有一个“该用却被忽略”的潜变量。
+
+</Aside>
+
+</Detail>
+
+<Pitfall title="空间 VAE 从 N(0, I) 采样也会失败">
+
+连续 VAE 同样可以有空间潜变量，比如 Stable Diffusion 的自编码器 $256 \times 256 \times 3 \to 32 \times 32 \times 4$。逐元素独立的 $\mathcal{N}(0, I)$ 刻画不了空间相关性，高维下随机采样又几乎必然落在真实编码的流形之外，所以直接采样只会得到扭曲无意义的图。它和 VQ-VAE 一样，需要另训一个先验（LDM 用的是扩散模型）。
+
+</Pitfall>
+
+<Quiz>
+
+生成时需要编码器吗？阶段二会不会改动码本？
+
+<Answer>
+
+都不。生成时从先验采样编号，查码本，交给解码器，编码器只在阶段二给训练集编码时用过。阶段二冻结编码器和码本，只训练先验模型。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<Step id="step-7" n={7} title="死码字与 EMA" gist="只有被选中的码字才会更新，随机初始化时远离数据的码字永远选不上，有效码本变小；EMA 直接算移动平均，用编码器输出初始化或定期重启才能救活死码字。">
+
+<KeyPoint>
+
+$$
+N_k \leftarrow \gamma N_k + (1 - \gamma)\, n_k, \qquad m_k \leftarrow \gamma m_k + (1 - \gamma) \sum_{i=1}^{n_k} z_e^{(i)}, \qquad e_k \leftarrow \frac{m_k}{N_k}
+$$
+
+$$
+\text{Perplexity} = \exp\Big( -\sum_{k=1}^{K} \bar{p}_k \log \bar{p}_k \Big)
+$$
+
+EMA 直接算码本损失想要的那个均值（$\gamma = 0.99$），损失只剩重建和 commitment。困惑度衡量码本实际用到了多少：均匀使用时为 $K$，只用一个时为 1。
+
+</KeyPoint>
+
+<Detail>
+
+### 死码字
+
+码本通常随机初始化，而**只有被选中的码字才会被更新**，形成富者愈富：
+
+- 例：码字 $\{-3, 0.1, 0.3, 5\}$，编码器输出都在 $[-1, 1]$，那么 $-3$ 和 $5$ 永远选不上，梯度为 0，一直待在原地。
+- 会自我强化：码本损失让被选中的码字更靠近数据，commitment 让编码器输出更靠近被选中的码字；编码器分布一漂移，原本在用的码字也可能被甩下。
+- 高维下更严重：随机码字散在整个空间，编码器输出只集中在一小块，少数码字垄断了分配。这就是 k-means 里的“空簇”问题。
+
+后果是有效码本变小，瓶颈从 $N \log_2 K$ 降到 $N \log_2 K_{\text{有效}}$。训练时用困惑度监控，$\bar p_k$ 是一个 batch 里码字 $k$ 的使用频率。
+
+<DeadCodeFigure />
+
+### EMA 码本更新
+
+既然码本损失的最优解就是均值，不如直接算：对每个码字维护被分到的样本数 $N_k$ 和向量和 $m_k$ 的指数移动平均，两者相除就是码字。论文取 $\gamma = 0.99$。损失只剩重建和 commitment：
+
+$$
+\mathcal{L} = -\log p\big(x \mid z_q(x)\big) + \beta\, \big\| z_e(x) - \mathrm{sg}[e_k] \big\|_2^2
+$$
+
+好处是收敛快、稳定，也不受优化器（比如 Adam 的自适应缩放）影响。但 **EMA 救不活死码字**：$n_k = 0$ 时 $N_k$、$m_k$ 按同一比例衰减，比值不变，码字还是不动。
+
+### 怎么救死码字
+
+| 问题 | 方法 |
+| --- | --- |
+| 码本靠梯度更新，慢且受优化器影响 | EMA 直接算均值 |
+| 初始码字离数据太远 | 用编码器输出初始化（随机抽取或先跑 k-means） |
+| 训练中出现死码字 | 定期把使用率低的码字重启到随机一个 $z_e$ 上 |
+| 高维距离集中、尺度漂移 | 投影到低维、做 $L_2$ 归一化后再查最近邻（ViT-VQGAN） |
+
+### 后续发展
+
+<LineageFigure />
+
+- **VQ-VAE-2**：一张网格既管全局又管细节太吃力，拆成两层：$256 \times 256$ 的图，顶层 $32 \times 32$ 管全局结构，底层 $64 \times 64$ 管局部细节并以顶层为条件，各有码本，$p(z_{\text{top}}, z_{\text{bottom}}) = p(z_{\text{top}})\,p(z_{\text{bottom}} \mid z_{\text{top}})$。
+- **VQGAN**：MSE 会把细节平均掉，重建损失换成 $L_1$ 加感知损失（LPIPS）加 PatchGAN 对抗损失，码本损失和 commitment 不变；先验换成 Transformer，“tokenizer + 自回归”的范式由此成型。
+- **LDM**：自编码器继承 VQGAN 的训练方式，先验换成扩散模型。它的 VQ 版本在量化**之前**的连续 $z_e$ 上做扩散，量化层算作解码器的第一步，见 <Ref topic="ldm" to="vq-reg">LDM 的 VQ-reg</Ref>。
+- **LAPA**：第一阶段的 LAQ 是一个条件 VQ-VAE，编码器看当前帧和未来帧，解码器以当前帧和离散潜在动作重建未来帧，用 NSVQ 代替 STE，见 <Ref topic="lapa" to="step-2">LAPA 第 2 步</Ref>。
+
+</Detail>
+
+<Pitfall title="EMA 不能救活死码字">
+
+没被分到样本时，$N_k$ 和 $m_k$ 同比例衰减，$e_k = m_k / N_k$ 不变。救活死码字要靠初始化或重启，不能靠换一种更新方式。
+
+</Pitfall>
+
+<Quiz>
+
+$K = 512$，训练中困惑度只有 40。这说明什么？瓶颈实际是多少？
+
+<Answer>
+
+码本里实际只有大约 40 个码字在被均匀地使用，其余大多是死码字。每个位置的有效信息量约为 $\log_2 40 \approx 5.3$ bit，而不是 9 bit。
+
+</Answer>
+
+</Quiz>
+
+</Step>
+
+<section id="cheatsheet" className="kb-section">
+
+## 公式速查
+
+| 含义 | 公式 |
+| --- | --- |
+| 最近邻量化 | $k = \arg\min_j \Vert z_e(x) - e_j\Vert _2$，$z_q(x) = e_k$ |
+| STE | $z_{q,\text{st}} = z_e + \mathrm{sg}[z_q - z_e]$，反向 $\nabla_{z_e}\mathcal{L} := \nabla_{z_q}\mathcal{L}$ |
+| 总损失 | $-\log p(x \mid z_q) + \Vert \mathrm{sg}[z_e] - e_k\Vert ^2 + \beta\,\Vert z_e - \mathrm{sg}[e_k]\Vert ^2$，$\beta = 0.25$ |
+| 码本损失的最优解 | $e_k^* = \frac{1}{n_k}\sum_i z_e^{(i)}$ |
+| KL | $N \log K$，常数 |
+| 信息瓶颈 | $I(x; z) \le N \log_2 K$ bit |
+| ELBO 分解 | $\log p(x \mid z_q(x)) + \log p_\psi(z_q(x))$ |
+| 自回归先验 | $p_\psi(z) = \prod_i p_\psi(z_i \mid z_{<i})$，损失为交叉熵 |
+| EMA 码本 | $e_k = m_k / N_k$，$\gamma = 0.99$ |
+| 困惑度 | $\exp(-\sum_k \bar p_k \log \bar p_k)$ |
+
+</section>
+
+<section id="pitfalls" className="kb-section">
+
+## 易错点
+
+1. ✗ 量化的梯度可以直接反传 → ✓ 量化是阶梯函数，导数处处为 0，要靠 STE 把 $z_q$ 的梯度原样复制给 $z_e$。
+2. ✗ STE 同时训练了码本 → ✓ 码字只出现在 $\mathrm{sg}$ 里，码本只从码本损失（或 EMA）得到更新。
+3. ✗ 码本损失和 commitment 是同一项写了两遍 → ✓ 两者停梯度的对象不同，一个只动码字，一个只动编码器，权重也不同（1 和 $\beta$）。
+4. ✗ VQ-VAE 的 KL 项被近似掉了 → ✓ 均匀先验加 one-hot 后验下 KL 恰好是常数 $N \log K$，丢掉是精确的。
+5. ✗ 训练完的均匀先验可以用来生成 → ✓ 随机拼一张编号网格解码出来是噪声，必须再学一个先验。
+6. ✗ 每个位置有自己的码本 → ✓ 所有位置、所有图片共用一个码本，位置信息由网格坐标提供。
+7. ✗ 离散网格解码会有块边界 → ✓ 码字是交给 CNN 解码器的特征，感受野重叠，没有块效应；真正的问题是先验采出不协调的组合。
+8. ✗ 换成 EMA 就不会有死码字 → ✓ EMA 救不活没被选中的码字，要靠初始化或重启。
+
+</section>
+
+<section id="flashcards" className="kb-section">
+
+## 自测卡片
+
+点击卡片翻面，勾选“已掌握”后会记在浏览器里，下次可以只看没掌握的。
+
+<Flashcards topic="vq-vae">
+
+<Card id="why-discrete">
+<Front>VQ-VAE 针对 VAE 的哪三个痛点？</Front>
+<Back>后验坍塌（KL 对信息量收税，强解码器下编码器躺平）；固定先验和真实编码对不上，采样落进空洞；很多数据本来就是离散的，离散序列有成熟的 softmax + 自回归工具。</Back>
+</Card>
+
+<Card id="quantize">
+<Front>写出量化规则。它和 k-means 是什么关系？</Front>
+<Back>$k = \arg\min_j \|z_e - e_j\|_2$，$z_q = e_k$。量化是 k-means 的“分配”，码本损失是“更新中心”，合起来是对编码器输出做在线 k-means。</Back>
+</Card>
+
+<Card id="grid">
+<Front>为什么要逐位置量化？$128^2 \times 3 \to 32^2$、$K = 512$ 时压缩多少倍？</Front>
+<Back>单个编号只有 $\log_2 K$ bit，太少。逐位置量化后共 $1024 \times 9 = 9216$ bit，原图 393216 bit，压缩约 42.7 倍。</Back>
+</Card>
+
+<Card id="ste">
+<Front>STE 怎么写？它在近似什么？</Front>
+<Back>$z_{q,\text{st}} = z_e + \mathrm{sg}[z_q - z_e]$。前向值是 $z_q$，反向假装 $\partial z_q/\partial z_e = I$；等价于把量化误差 $\varepsilon$ 当成与编码器无关的外部噪声。</Back>
+</Card>
+
+<Card id="three-losses">
+<Front>三项损失分别更新谁？</Front>
+<Back>① 重建：解码器，经 STE 也更新编码器；② $\|\mathrm{sg}[z_e] - e_k\|^2$：只更新码本；③ $\beta\|z_e - \mathrm{sg}[e_k]\|^2$：只更新编码器，$\beta = 0.25$。</Back>
+</Card>
+
+<Card id="commit">
+<Front>没有 commitment 会怎样？</Front>
+<Back>编码器输出没有尺度约束，任意漂移，码字追不上，量化误差变大，STE 的近似失效。</Back>
+</Card>
+
+<Card id="kl">
+<Front>VQ-VAE 的 KL 项去哪了？为什么不会后验坍塌？</Front>
+<Back>one-hot 后验、均匀先验下 KL $= N \log K$，是常数，丢掉。它像一笔固定费用，$z$ 携带信息不额外收税；信息量由 $N \log_2 K$ 的硬瓶颈限制。</Back>
+</Card>
+
+<Card id="prior">
+<Front>第二阶段在做什么？和 ELBO 什么关系？</Front>
+<Back>冻结编码器和码本，把训练集编码成索引网格，用自回归模型做最大似然拟合它们的分布。$\text{ELBO} = \log p(x \mid z_q) + \log p_\psi(z_q)$，两阶段分别优化这两部分。</Back>
+</Card>
+
+<Card id="dead">
+<Front>什么是死码字？怎么解决？</Front>
+<Back>从未被选中的码字收不到更新，永远不动，有效码本变小。用编码器输出初始化码本，或定期把低使用率码字重启到随机 $z_e$ 上；EMA 本身救不活它们。</Back>
+</Card>
+
+</Flashcards>
+
+</section>
